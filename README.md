@@ -156,6 +156,11 @@ Pipeline: `scan` (measure) → `resolve` (attribute) → `classify` (tier) →
 Known limitations are documented honestly:
 → [Limitations](https://bleach.emdzej.pl/guide/limitations)
 
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md). Releases and tags use bare version numbers,
+without a `v` prefix.
+
 ## License
 
 MIT — see [LICENSE](LICENSE).

@@ -2,11 +2,16 @@ name: Release
 
 on:
   push:
-    tags: ['v*']
+    # Bare semver tags, no `v` prefix. `[0-9]+` means one or more digits in
+    # GitHub's filter-pattern syntax; the second pattern covers prereleases
+    # such as 0.2.0-rc1.
+    tags:
+      - '[0-9]+.[0-9]+.[0-9]+'
+      - '[0-9]+.[0-9]+.[0-9]+-*'
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Tag to release (e.g. v0.1.0)'
+        description: 'Tag to release (e.g. 0.1.0)'
         required: true
 
 permissions:
@@ -27,9 +32,15 @@ jobs:
       - name: Resolve version
         id: version
         run: |
+          # The tag *is* the version — no prefix to strip.
           TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          case "$TAG" in
+            [0-9]*) ;;
+            *) echo "::error::tag '$TAG' is not a bare semver version" && exit 1 ;;
+          esac
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+          echo "version=$TAG" >> "$GITHUB_OUTPUT"
+          echo "prerelease=$( [ "${TAG#*-}" != "$TAG" ] && echo true || echo false )" >> "$GITHUB_OUTPUT"
 
       # Keep `bleach --version` honest: the source default is a placeholder,
       # the tag is the truth.
@@ -80,11 +91,12 @@ jobs:
 
       - name: Generate release notes
         run: |
+          VERSION='${{ steps.version.outputs.version }}'
           {
             echo "## Install"
             echo
             echo '```sh'
-            echo 'curl -fsSL https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.tag }}/bleach-macos-universal.tar.gz | tar xz'
+            echo 'curl -fsSL https://github.com/${{ github.repository }}/releases/download/'"$VERSION"'/bleach-macos-universal.tar.gz | tar xz'
             echo 'sudo mv bleach /usr/local/bin/'
             echo '# unsigned build — clear the Gatekeeper attribute on first run:'
             echo 'xattr -d com.apple.quarantine /usr/local/bin/bleach'
@@ -95,15 +107,28 @@ jobs:
             echo
             echo "Docs: https://bleach.emdzej.pl"
             echo
-            echo "## Changes"
-            echo
-            PREV="$(git describe --tags --abbrev=0 "${{ steps.version.outputs.tag }}^" 2>/dev/null || true)"
-            if [ -n "$PREV" ]; then
-              git log --no-merges --pretty='- %s' "$PREV..${{ steps.version.outputs.tag }}"
-              echo
-              echo "**Full diff**: https://github.com/${{ github.repository }}/compare/$PREV...${{ steps.version.outputs.tag }}"
+
+            # Prefer the maintained changelog: extract this version's section,
+            # from its heading up to the next version heading.
+            if [ -f CHANGELOG.md ] && grep -q "^## \[$VERSION\]" CHANGELOG.md; then
+              # Stop at the next version heading, or at the link-reference
+              # definitions when this is the oldest section in the file.
+              awk -v v="$VERSION" '
+                $0 ~ "^## \\[" v "\\]" { found = 1; next }
+                found && (/^## \[/ || /^\[[^]]+\]: /) { exit }
+                found { print }
+              ' CHANGELOG.md
             else
-              echo "First release."
+              echo "## Changes"
+              echo
+              PREV="$(git describe --tags --abbrev=0 "$VERSION^" 2>/dev/null || true)"
+              if [ -n "$PREV" ]; then
+                git log --no-merges --pretty='- %s' "$PREV..$VERSION"
+                echo
+                echo "**Full diff**: https://github.com/${{ github.repository }}/compare/$PREV...$VERSION"
+              else
+                echo "First release."
+              fi
             fi
           } > release-notes.md
           cat release-notes.md
@@ -116,4 +141,5 @@ jobs:
             --title "bleach ${{ steps.version.outputs.version }}" \
             --notes-file release-notes.md \
             --verify-tag \
+            ${{ steps.version.outputs.prerelease == 'true' && '--prerelease' || '' }} \
             dist/*.tar.gz dist/*.sha256

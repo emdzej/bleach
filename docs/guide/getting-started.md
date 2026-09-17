@@ -11,7 +11,9 @@ sudo mv bleach /usr/local/bin/
 ```
 
 Release binaries are universal (`arm64` + `x86_64`) and built by GitHub
-Actions. Each release also carries a `.sha256` you can verify:
+Actions. Tags and releases use bare version numbers, without a `v` prefix; see
+the [changelog](https://github.com/emdzej/bleach/blob/main/CHANGELOG.md). Each
+release also carries a `.sha256` you can verify:
 
 ```sh
 shasum -a 256 -c bleach-macos-universal.tar.gz.sha256
