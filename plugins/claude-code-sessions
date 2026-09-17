@@ -1,0 +1,178 @@
+#!/usr/bin/env python3
+"""bleach plugin: Claude Code session state.
+
+Claude Code keeps per-project transcripts under ~/.claude/projects, named by
+encoding the project's absolute path with '/' replaced by '-'. That encoding is
+reversible enough to answer the question that actually matters: does the
+project this session belongs to still exist on disk?
+
+A session directory for a deleted checkout is unambiguously dead weight, which
+is a stronger signal than mtime alone can ever give.
+"""
+import json
+import os
+import sys
+
+PROTOCOL = 1
+HOME = os.path.expanduser("~")
+
+# Subdirectories of ~/.claude that are regenerable, with how to describe them.
+REGENERABLE = {
+    "paste-cache": ("cache", "clipboard paste cache"),
+    "shell-snapshots": ("cache", "captured shell environments"),
+    "cache": ("cache", "general cache"),
+    "file-history": ("state", "pre-edit file snapshots for undo"),
+    "jobs": ("state", "completed background job records"),
+    "backups": ("state", "settings backups"),
+}
+
+MANIFEST = {
+    "protocol": PROTOCOL,
+    "name": "claude-code-sessions",
+    "description": "Stale Claude Code session transcripts and regenerable caches",
+    "capabilities": ["enumerate"],
+    "owns": ["~/.claude"],
+}
+
+
+def newest_mtime(path):
+    """Newest mtime anywhere inside. The directory's own mtime is unreliable."""
+    newest = 0.0
+    for root, _dirs, files in os.walk(path, followlinks=False):
+        for name in files:
+            try:
+                newest = max(newest, os.lstat(os.path.join(root, name)).st_mtime)
+            except OSError:
+                pass
+    return newest
+
+
+def decode_project_path(encoded):
+    """Reverse '/'->'-' encoding by walking the filesystem.
+
+    The encoding is lossy: a literal '-' in a directory name is
+    indistinguishable from a separator. So instead of guessing, we walk real
+    directories and at each level take the longest child name that matches a
+    prefix of what remains. Returns None when the path cannot be resolved,
+    which we report as "project is gone".
+    """
+    remaining = encoded.lstrip("-")
+    current = "/"
+    while remaining:
+        try:
+            children = os.listdir(current)
+        except OSError:
+            return None
+        best = None
+        for child in children:
+            token = child
+            if remaining == token or remaining.startswith(token + "-"):
+                if best is None or len(token) > len(best):
+                    best = token
+        if best is None:
+            return None
+        current = os.path.join(current, best)
+        remaining = remaining[len(best):].lstrip("-")
+    return current
+
+
+def days_old(mtime, now):
+    return int((now - mtime) / 86400) if mtime else None
+
+
+def enumerate_candidates(request):
+    stale_days = request.get("stale_days", 180)
+    now = __import__("time").time()
+    out = []
+
+    projects = os.path.join(HOME, ".claude", "projects")
+    if os.path.isdir(projects):
+        for entry in sorted(os.listdir(projects)):
+            path = os.path.join(projects, entry)
+            if not os.path.isdir(path) or os.path.islink(path):
+                continue
+            evidence = []
+            tier = "unknown"
+
+            resolved = decode_project_path(entry)
+            if resolved is None:
+                evidence.append({
+                    "kind": "noOwnerFound",
+                    "detail": "the project this session belongs to no longer exists on disk",
+                    "weight": -8,
+                })
+                tier = "orphan_likely"
+            else:
+                evidence.append({
+                    "kind": "nameMatch",
+                    "detail": "project still exists at %s" % resolved,
+                    "weight": 4,
+                })
+
+            age = days_old(newest_mtime(path), now)
+            if age is not None:
+                if age >= stale_days:
+                    evidence.append({
+                        "kind": "stale",
+                        "detail": "no transcript activity for %d days" % age,
+                        "weight": -3,
+                    })
+                    if tier == "unknown":
+                        tier = "review"
+                else:
+                    evidence.append({
+                        "kind": "recentActivity",
+                        "detail": "last used %d days ago" % age,
+                        "weight": 3,
+                    })
+
+            out.append({
+                "path": path,
+                "label": "claude session: %s" % (resolved or entry),
+                "kind": "state",
+                "tier_hint": tier,
+                "evidence": evidence,
+            })
+
+    for name, (kind, description) in REGENERABLE.items():
+        path = os.path.join(HOME, ".claude", name)
+        if not os.path.isdir(path) or os.path.islink(path):
+            continue
+        age = days_old(newest_mtime(path), now)
+        evidence = [{
+            "kind": "cacheRule",
+            "detail": description + " — rebuilt on demand",
+            "weight": -2,
+        }]
+        if age is not None and age >= stale_days:
+            evidence.append({
+                "kind": "stale",
+                "detail": "untouched for %d days" % age,
+                "weight": -3,
+            })
+        out.append({
+            "path": path,
+            "label": "claude %s" % name,
+            "kind": kind,
+            "tier_hint": "cache_safe" if kind == "cache" else "review",
+            "evidence": evidence,
+        })
+
+    return {"protocol": PROTOCOL, "candidates": out}
+
+
+def main():
+    mode = sys.argv[1] if len(sys.argv) > 1 else "manifest"
+    if mode == "manifest":
+        json.dump(MANIFEST, sys.stdout)
+        return 0
+    if mode == "enumerate":
+        request = json.load(sys.stdin) if not sys.stdin.isatty() else {}
+        json.dump(enumerate_candidates(request), sys.stdout)
+        return 0
+    sys.stderr.write("unknown mode: %s\n" % mode)
+    return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main())

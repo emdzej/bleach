@@ -1,0 +1,14 @@
+.build/
+.swiftpm/
+*.xcodeproj
+.DS_Store
+
+# docs site
+node_modules/
+docs/.vitepress/dist/
+docs/.vitepress/cache/
+
+# local artifacts
+bleach-plan.json
+*.tar.gz
+*.sha256

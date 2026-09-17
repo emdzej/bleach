@@ -1,0 +1,85 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    name: Build & test
+    runs-on: macos-15
+    timeout-minutes: 25
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show toolchain
+        run: |
+          swift --version
+          xcodebuild -version
+
+      # Keyed on Package.resolved so a dependency bump invalidates it, with a
+      # looser fallback so most runs still get a warm start.
+      - name: Cache SwiftPM build
+        uses: actions/cache@v4
+        with:
+          path: .build
+          key: ${{ runner.os }}-spm-${{ hashFiles('Package.resolved') }}
+          restore-keys: ${{ runner.os }}-spm-
+
+      - name: Build (debug)
+        run: swift build --build-tests
+
+      - name: Test
+        run: swift test
+
+      - name: Build (release)
+        run: swift build -c release
+
+      # The runner has no orphaned app state worth scanning, so these exercise
+      # the parts that must work everywhere: argument parsing, the embedded
+      # rules YAML, and plugin discovery.
+      - name: Smoke test CLI
+        run: |
+          BIN=.build/release/bleach
+          "$BIN" --help
+          "$BIN" --version
+          "$BIN" rules | head -20
+          "$BIN" rules --plugins
+          "$BIN" quarantine
+
+      - name: Smoke test bundled plugins
+        run: |
+          for plugin in plugins/*; do
+            echo "--- $plugin"
+            "$plugin" manifest | python3 -m json.tool
+            echo "{\"protocol\":1,\"home\":\"$HOME\",\"stale_days\":180,\"scope\":[\"$HOME\"]}" \
+              | "$plugin" enumerate | python3 -c 'import json,sys; json.load(sys.stdin)'
+          done
+
+      - name: Verify the TUI degrades without a terminal
+        run: |
+          # Must exit cleanly with a message rather than hanging or crashing.
+          .build/release/bleach tui --fast-inventory < /dev/null 2>&1 | tail -1
+
+  docs-build:
+    name: Docs build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+      - run: npm run docs:build

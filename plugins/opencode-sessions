@@ -1,0 +1,147 @@
+#!/usr/bin/env python3
+"""bleach plugin: opencode state.
+
+opencode keeps everything under ~/.local/share/opencode, which a Library-only
+scan never sees and which grows large quietly — 2.8 GB on the machine this was
+written against, dominated by downloaded language servers and per-session
+filesystem snapshots.
+
+The shape matters: `bin/` holds redownloadable tooling, `snapshot/` holds
+per-session git-style object stores, and `opencode.db` is the live database.
+Treating that directory as one blob tells you nothing actionable; splitting it
+by role tells you exactly what is safe.
+"""
+import json
+import os
+import sys
+import time
+
+PROTOCOL = 1
+HOME = os.path.expanduser("~")
+ROOT = os.path.join(HOME, ".local", "share", "opencode")
+
+MANIFEST = {
+    "protocol": PROTOCOL,
+    "name": "opencode-sessions",
+    "description": "opencode language servers, session snapshots and diffs",
+    "capabilities": ["enumerate"],
+    "owns": [
+        "~/.local/share/opencode",
+        "~/Library/Application Support/ai.opencode.desktop",
+    ],
+}
+
+# Top-level roles. `opencode.db` is deliberately absent: it is the live
+# database and must never appear as a candidate at all.
+ROLES = {
+    "bin": ("cache", "cache_safe",
+            "downloaded language servers, refetched on next use"),
+    "log": ("cache", "cache_safe", "rotating logs"),
+    "tool-output": ("cache", "cache_safe", "captured tool output"),
+}
+
+
+def newest_mtime(path):
+    newest = 0.0
+    for root, _dirs, files in os.walk(path, followlinks=False):
+        for name in files:
+            try:
+                newest = max(newest, os.lstat(os.path.join(root, name)).st_mtime)
+            except OSError:
+                pass
+    return newest
+
+
+def stale_evidence(path, stale_days, now):
+    mtime = newest_mtime(path)
+    if not mtime:
+        return []
+    age = int((now - mtime) / 86400)
+    if age >= stale_days:
+        return [{"kind": "stale",
+                 "detail": "untouched for %d days" % age,
+                 "weight": -3}]
+    if age <= 14:
+        return [{"kind": "recentActivity",
+                 "detail": "active %d days ago" % age,
+                 "weight": 4}]
+    return []
+
+
+def enumerate_candidates(request):
+    stale_days = request.get("stale_days", 180)
+    now = time.time()
+    out = []
+
+    if not os.path.isdir(ROOT):
+        return {"protocol": PROTOCOL, "candidates": out}
+
+    for name, (kind, tier, description) in ROLES.items():
+        path = os.path.join(ROOT, name)
+        if not os.path.isdir(path) or os.path.islink(path):
+            continue
+        out.append({
+            "path": path,
+            "label": "opencode %s" % name,
+            "kind": kind,
+            "tier_hint": tier,
+            "evidence": [{"kind": "cacheRule", "detail": description, "weight": -2}]
+                        + stale_evidence(path, stale_days, now),
+        })
+
+    # Per-session snapshot object stores. Each is independent, so reporting
+    # them individually lets you drop only the dead ones.
+    snapshots = os.path.join(ROOT, "snapshot")
+    if os.path.isdir(snapshots):
+        for entry in sorted(os.listdir(snapshots)):
+            path = os.path.join(snapshots, entry)
+            if not os.path.isdir(path) or os.path.islink(path):
+                continue
+            evidence = [{
+                "kind": "cacheRule",
+                "detail": "per-session filesystem snapshot; only needed to rewind that session",
+                "weight": -2,
+            }] + stale_evidence(path, stale_days, now)
+            stale = any(e["kind"] == "stale" for e in evidence)
+            out.append({
+                "path": path,
+                "label": "opencode snapshot %s" % entry[:12],
+                "kind": "state",
+                "tier_hint": "orphan_likely" if stale else "review",
+                "evidence": evidence,
+            })
+
+    # Session diffs: the single largest subtree, but it is what powers
+    # "show me what changed in this session", so it stays reviewable only.
+    diffs = os.path.join(ROOT, "storage", "session_diff")
+    if os.path.isdir(diffs):
+        out.append({
+            "path": diffs,
+            "label": "opencode session diffs",
+            "kind": "state",
+            "tier_hint": "review",
+            "evidence": [{
+                "kind": "userDataMarker",
+                "detail": "per-session change history — losing it loses session replay",
+                "weight": 2,
+            }] + stale_evidence(diffs, stale_days, now),
+        })
+
+    return {"protocol": PROTOCOL, "candidates": out}
+
+
+def main():
+    mode = sys.argv[1] if len(sys.argv) > 1 else "manifest"
+    if mode == "manifest":
+        json.dump(MANIFEST, sys.stdout)
+        return 0
+    if mode == "enumerate":
+        request = json.load(sys.stdin) if not sys.stdin.isatty() else {}
+        json.dump(enumerate_candidates(request), sys.stdout)
+        return 0
+    sys.stderr.write("unknown mode: %s\n" % mode)
+    return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main())

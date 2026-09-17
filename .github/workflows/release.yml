@@ -1,0 +1,119 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to release (e.g. v0.1.0)'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build & publish
+    runs-on: macos-15
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+          fetch-depth: 0
+
+      - name: Resolve version
+        id: version
+        run: |
+          TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+
+      # Keep `bleach --version` honest: the source default is a placeholder,
+      # the tag is the truth.
+      - name: Stamp version from tag
+        run: |
+          sed -i '' \
+            's/version: "[0-9][^"]*"/version: "${{ steps.version.outputs.version }}"/' \
+            Sources/bleach/Bleach.swift
+          grep -n 'version: "' Sources/bleach/Bleach.swift
+
+      - name: Test before shipping
+        run: swift test
+
+      - name: Build universal binary
+        run: |
+          swift build -c release --arch arm64 --arch x86_64
+          BIN_PATH="$(swift build -c release --arch arm64 --arch x86_64 --show-bin-path)"
+          echo "BIN_PATH=$BIN_PATH" >> "$GITHUB_ENV"
+          lipo -info "$BIN_PATH/bleach"
+
+      - name: Verify it runs and is universal
+        run: |
+          "$BIN_PATH/bleach" --version
+          lipo -info "$BIN_PATH/bleach" | grep -q arm64
+          lipo -info "$BIN_PATH/bleach" | grep -q x86_64
+
+      - name: Package
+        run: |
+          mkdir -p dist/bleach
+          cp "$BIN_PATH/bleach" dist/bleach/
+          cp README.md LICENSE dist/bleach/
+          # Bundle the example plugins so a fresh install can try them via
+          # BLEACH_PLUGIN_PATH without cloning the repo.
+          cp -R plugins dist/bleach/plugins
+
+          cd dist
+          # Stable name, so releases/latest/download/ URLs keep working.
+          tar czf bleach-macos-universal.tar.gz -C bleach .
+          # Versioned name, for pinning.
+          cp bleach-macos-universal.tar.gz \
+             "bleach-${{ steps.version.outputs.version }}-macos-universal.tar.gz"
+
+          for f in *.tar.gz; do
+            shasum -a 256 "$f" > "$f.sha256"
+          done
+          ls -la
+          cat *.sha256
+
+      - name: Generate release notes
+        run: |
+          {
+            echo "## Install"
+            echo
+            echo '```sh'
+            echo 'curl -fsSL https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.tag }}/bleach-macos-universal.tar.gz | tar xz'
+            echo 'sudo mv bleach /usr/local/bin/'
+            echo '# unsigned build — clear the Gatekeeper attribute on first run:'
+            echo 'xattr -d com.apple.quarantine /usr/local/bin/bleach'
+            echo '```'
+            echo
+            echo "Universal binary (arm64 + x86_64), macOS 13+."
+            echo "Verify with \`shasum -a 256 -c bleach-macos-universal.tar.gz.sha256\`."
+            echo
+            echo "Docs: https://bleach.emdzej.pl"
+            echo
+            echo "## Changes"
+            echo
+            PREV="$(git describe --tags --abbrev=0 "${{ steps.version.outputs.tag }}^" 2>/dev/null || true)"
+            if [ -n "$PREV" ]; then
+              git log --no-merges --pretty='- %s' "$PREV..${{ steps.version.outputs.tag }}"
+              echo
+              echo "**Full diff**: https://github.com/${{ github.repository }}/compare/$PREV...${{ steps.version.outputs.tag }}"
+            else
+              echo "First release."
+            fi
+          } > release-notes.md
+          cat release-notes.md
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ steps.version.outputs.tag }}" \
+            --title "bleach ${{ steps.version.outputs.version }}" \
+            --notes-file release-notes.md \
+            --verify-tag \
+            dist/*.tar.gz dist/*.sha256

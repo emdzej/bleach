@@ -1,0 +1,63 @@
+name: Docs
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/**'
+      - 'package.json'
+      - '.github/workflows/docs.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Only one deploy at a time; don't cancel a running one, since a half-finished
+# Pages deployment is worse than a slightly stale site.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # VitePress lastUpdated needs git history
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: actions/configure-pages@v5
+
+      - run: npm ci
+      - run: npm run docs:build
+
+      # The custom domain lives in docs/public/CNAME, which VitePress copies
+      # into the output — so it survives every deploy without being configured
+      # in repo settings.
+      - name: Verify CNAME survived the build
+        run: |
+          test -f docs/.vitepress/dist/CNAME
+          cat docs/.vitepress/dist/CNAME
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs/.vitepress/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
