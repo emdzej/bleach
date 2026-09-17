@@ -7,7 +7,7 @@
 
 Find and safely reclaim orphaned application state on macOS.
 
-**📖 Full documentation: [bleach.emdzej.pl](https://bleach.emdzej.pl)**
+**Full documentation: [bleach.emdzej.pl](https://bleach.emdzej.pl)**
 
 `~/Library` accumulates directories belonging to apps you uninstalled months
 ago, superseded versions of apps you still use, and caches nothing will ever

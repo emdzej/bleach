@@ -20,8 +20,7 @@ hero:
       link: https://github.com/emdzej/bleach
 
 features:
-  - icon: 🔍
-    title: Evidence, not guesses
+  - title: Evidence, not guesses
     details: >-
       Nothing on disk links ~/Library/Application Support/Foo back to an app.
       bleach gathers evidence from six independent sources and shows you the
@@ -29,8 +28,7 @@ features:
     link: /guide/how-it-works
     linkText: What it checks
 
-  - icon: ↩️
-    title: Reversible by default
+  - title: Reversible by default
     details: >-
       apply renames paths into a quarantine — an O(1) metadata operation on
       APFS, so 10 GB moves instantly. Trash and permanent delete are there
@@ -38,16 +36,14 @@ features:
     link: /guide/disposal-modes
     linkText: Disposal modes
 
-  - icon: 🏠
-    title: Confined to your home
+  - title: Confined to your home
     details: >-
       Candidates outside $HOME are measured and reported but never actionable.
       bleach never asks for sudo, and three independent layers enforce it.
     link: /guide/scope
     linkText: Scope & safety
 
-  - icon: 🧩
-    title: Extensible
+  - title: Extensible
     details: >-
       Rules are YAML, not code. Resolvers are plain executables speaking JSON
       on stdio — a 40-line script is a complete plugin, and it can never
