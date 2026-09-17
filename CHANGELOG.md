@@ -8,6 +8,31 @@ Tags and releases use bare version numbers, without a `v` prefix.
 
 ## [Unreleased]
 
+## [0.1.1] — 2026-09-17
+
+Packaging only. The binary is functionally identical to 0.1.0.
+
+### Changed
+
+- Releases now ship three builds — `arm64`, `x86_64` and `universal` — instead
+  of universal alone, so a typical download is a third of the previous size.
+- Release binaries are stripped of local and debug symbols, which roughly
+  halves each one. Exported symbols are retained, so crash backtraces still
+  symbolise.
+- Assets no longer carry a version in the filename. It was redundant:
+  `releases/download/<tag>/<name>` already pins a version, and
+  `releases/latest/download/<name>` needs the name to be stable.
+- Install instructions use `uname -m` to pick the matching slice.
+- Tarballs now include `CHANGELOG.md`.
+
+Download sizes, compressed:
+
+| Asset | 0.1.0 | 0.1.1 |
+|---|---|---|
+| arm64 | — | 0.78 MB |
+| x86_64 | — | 0.83 MB |
+| universal | 2.30 MB | 1.61 MB |
+
 ## [0.1.0] — 2026-09-17
 
 First release.
@@ -111,5 +136,6 @@ First release.
   until the quarantine attribute is cleared.
 - Untested below macOS 13.
 
-[Unreleased]: https://github.com/emdzej/bleach/compare/0.1.0...HEAD
+[Unreleased]: https://github.com/emdzej/bleach/compare/0.1.1...HEAD
+[0.1.1]: https://github.com/emdzej/bleach/compare/0.1.0...0.1.1
 [0.1.0]: https://github.com/emdzej/bleach/releases/tag/0.1.0

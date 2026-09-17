@@ -19,7 +19,8 @@ cleanup commands.
 ## Install
 
 ```sh
-curl -fsSL https://github.com/emdzej/bleach/releases/latest/download/bleach-macos-universal.tar.gz \
+# picks the right slice for your Mac (arm64 or x86_64)
+curl -fsSL "https://github.com/emdzej/bleach/releases/latest/download/bleach-macos-$(uname -m).tar.gz" \
   | tar xz
 sudo mv bleach /usr/local/bin/
 
@@ -28,6 +29,9 @@ xattr -d com.apple.quarantine /usr/local/bin/bleach
 
 bleach scan
 ```
+
+A `bleach-macos-universal.tar.gz` is published too, for when you need one
+binary that covers both architectures.
 
 Or from source (Swift 6.0+):
 

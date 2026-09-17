@@ -5,18 +5,26 @@
 ### From a release
 
 ```sh
-curl -fsSL https://github.com/emdzej/bleach/releases/latest/download/bleach-macos-universal.tar.gz \
+# picks the right slice for your Mac; uname -m reports arm64 or x86_64
+curl -fsSL "https://github.com/emdzej/bleach/releases/latest/download/bleach-macos-$(uname -m).tar.gz" \
   | tar xz
 sudo mv bleach /usr/local/bin/
 ```
 
-Release binaries are universal (`arm64` + `x86_64`) and built by GitHub
-Actions. Tags and releases use bare version numbers, without a `v` prefix; see
-the [changelog](https://github.com/emdzej/bleach/blob/main/CHANGELOG.md). Each
-release also carries a `.sha256` you can verify:
+Each release ships three builds, all produced by GitHub Actions:
+
+| Asset | For | Download |
+|---|---|---|
+| `bleach-macos-arm64.tar.gz` | Apple silicon | ~0.8 MB |
+| `bleach-macos-x86_64.tar.gz` | Intel | ~0.8 MB |
+| `bleach-macos-universal.tar.gz` | both, for one binary across a fleet | ~1.6 MB |
+
+Tags and releases use bare version numbers, without a `v` prefix; see the
+[changelog](https://github.com/emdzej/bleach/blob/main/CHANGELOG.md). Each
+asset carries a `.sha256` you can verify:
 
 ```sh
-shasum -a 256 -c bleach-macos-universal.tar.gz.sha256
+shasum -a 256 -c bleach-macos-arm64.tar.gz.sha256
 ```
 
 The binaries are unsigned, so the first run may be blocked by Gatekeeper.

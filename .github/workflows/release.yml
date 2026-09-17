@@ -68,35 +68,58 @@ jobs:
         run: |
           ARM="$(swift build -c release --triple arm64-apple-macosx13.0  --scratch-path .build-arm --show-bin-path)"
           X86="$(swift build -c release --triple x86_64-apple-macosx13.0 --scratch-path .build-x86 --show-bin-path)"
-          mkdir -p universal
-          lipo -create -output universal/bleach "$ARM/bleach" "$X86/bleach"
-          echo "BIN_PATH=$PWD/universal" >> "$GITHUB_ENV"
-          lipo -info universal/bleach
+          mkdir -p slices
+          cp "$ARM/bleach" slices/bleach-arm64
+          cp "$X86/bleach" slices/bleach-x86_64
+          lipo -create -output slices/bleach-universal slices/bleach-arm64 slices/bleach-x86_64
 
-      - name: Verify it runs and is universal
+          # Strip local and debug symbols. Roughly halves each binary and
+          # costs nothing: exported symbols survive, so crash backtraces still
+          # symbolise.
+          for f in slices/bleach-*; do
+            echo "$f: $(stat -f%z "$f") bytes before"
+            strip -rSTx "$f"
+            echo "$f: $(stat -f%z "$f") bytes after"
+          done
+          lipo -info slices/bleach-universal
+
+      - name: Verify every slice runs
         run: |
-          "$BIN_PATH/bleach" --version
-          lipo -info "$BIN_PATH/bleach" | grep -q arm64
-          lipo -info "$BIN_PATH/bleach" | grep -q x86_64
-          # The stamped version must match the tag we are publishing.
-          test "$("$BIN_PATH/bleach" --version)" = "${{ steps.version.outputs.version }}"
+          for arch in arm64 x86_64 universal; do
+            f="slices/bleach-$arch"
+            lipo -info "$f"
+            # An x86_64 binary runs here only under Rosetta, which the runner
+            # may not have, so only execute the ones native to arm64.
+            case "$arch" in
+              x86_64) echo "  (skipping execution: not native to this runner)" ;;
+              *)
+                test "$("$f" --version)" = "${{ steps.version.outputs.version }}"
+                echo "  runs, reports ${{ steps.version.outputs.version }}"
+                ;;
+            esac
+          done
+          lipo -info slices/bleach-universal | grep -q arm64
+          lipo -info slices/bleach-universal | grep -q x86_64
 
       - name: Package
         run: |
-          mkdir -p dist/bleach
-          cp "$BIN_PATH/bleach" dist/bleach/
-          cp README.md LICENSE dist/bleach/
-          # Bundle the example plugins so a fresh install can try them via
-          # BLEACH_PLUGIN_PATH without cloning the repo.
-          cp -R plugins dist/bleach/plugins
+          mkdir -p dist
+          # One tarball per architecture. Unversioned names, because
+          # releases/download/<tag>/<name> already pins a version and
+          # releases/latest/download/<name> needs the name to be stable —
+          # versioned duplicates would just double the assets.
+          for arch in universal arm64 x86_64; do
+            stage="stage-$arch"
+            mkdir -p "$stage"
+            cp "slices/bleach-$arch" "$stage/bleach"
+            cp README.md LICENSE CHANGELOG.md "$stage/"
+            # Bundle the example plugins so a fresh install can try them via
+            # BLEACH_PLUGIN_PATH without cloning the repo.
+            cp -R plugins "$stage/plugins"
+            tar czf "dist/bleach-macos-$arch.tar.gz" -C "$stage" .
+          done
 
           cd dist
-          # Stable name, so releases/latest/download/ URLs keep working.
-          tar czf bleach-macos-universal.tar.gz -C bleach .
-          # Versioned name, for pinning.
-          cp bleach-macos-universal.tar.gz \
-             "bleach-${{ steps.version.outputs.version }}-macos-universal.tar.gz"
-
           for f in *.tar.gz; do
             shasum -a 256 "$f" > "$f.sha256"
           done
@@ -107,17 +130,27 @@ jobs:
         run: |
           VERSION='${{ steps.version.outputs.version }}'
           {
+            REPO='${{ github.repository }}'
             echo "## Install"
             echo
             echo '```sh'
-            echo 'curl -fsSL https://github.com/${{ github.repository }}/releases/download/'"$VERSION"'/bleach-macos-universal.tar.gz | tar xz'
+            echo '# picks the right slice for your Mac (arm64 or x86_64)'
+            echo "curl -fsSL https://github.com/$REPO/releases/download/$VERSION/bleach-macos-\$(uname -m).tar.gz | tar xz"
             echo 'sudo mv bleach /usr/local/bin/'
+            echo
             echo '# unsigned build — clear the Gatekeeper attribute on first run:'
             echo 'xattr -d com.apple.quarantine /usr/local/bin/bleach'
             echo '```'
             echo
-            echo "Universal binary (arm64 + x86_64), macOS 13+."
-            echo "Verify with \`shasum -a 256 -c bleach-macos-universal.tar.gz.sha256\`."
+            echo "macOS 13+. Three builds, pick one:"
+            echo
+            echo "| Asset | For |"
+            echo "|---|---|"
+            echo "| \`bleach-macos-arm64.tar.gz\` | Apple silicon |"
+            echo "| \`bleach-macos-x86_64.tar.gz\` | Intel |"
+            echo "| \`bleach-macos-universal.tar.gz\` | both, if you need one binary for a fleet |"
+            echo
+            echo "Verify with \`shasum -a 256 -c bleach-macos-<arch>.tar.gz.sha256\`."
             echo
             echo "Docs: https://bleach.emdzej.pl"
             echo
