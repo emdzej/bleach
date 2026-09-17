@@ -12,3 +12,6 @@ docs/.vitepress/cache/
 bleach-plan.json
 *.tar.gz
 *.sha256
+.build-arm/
+.build-x86/
+universal/

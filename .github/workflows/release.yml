@@ -54,18 +54,32 @@ jobs:
       - name: Test before shipping
         run: swift test
 
-      - name: Build universal binary
+      # Built one architecture at a time and lipo'd together, rather than with
+      # SwiftPM's `--arch a --arch b`. That flag routes through a build path
+      # which fails on Xcode 16.4 / Swift 6.1.2 with "Unexpected duplicate
+      # tasks" and "missing target configuration". Separate scratch paths plus
+      # lipo is toolchain-agnostic.
+      - name: Build per-architecture slices
         run: |
-          swift build -c release --arch arm64 --arch x86_64
-          BIN_PATH="$(swift build -c release --arch arm64 --arch x86_64 --show-bin-path)"
-          echo "BIN_PATH=$BIN_PATH" >> "$GITHUB_ENV"
-          lipo -info "$BIN_PATH/bleach"
+          swift build -c release --triple arm64-apple-macosx13.0  --scratch-path .build-arm
+          swift build -c release --triple x86_64-apple-macosx13.0 --scratch-path .build-x86
+
+      - name: Create universal binary
+        run: |
+          ARM="$(swift build -c release --triple arm64-apple-macosx13.0  --scratch-path .build-arm --show-bin-path)"
+          X86="$(swift build -c release --triple x86_64-apple-macosx13.0 --scratch-path .build-x86 --show-bin-path)"
+          mkdir -p universal
+          lipo -create -output universal/bleach "$ARM/bleach" "$X86/bleach"
+          echo "BIN_PATH=$PWD/universal" >> "$GITHUB_ENV"
+          lipo -info universal/bleach
 
       - name: Verify it runs and is universal
         run: |
           "$BIN_PATH/bleach" --version
           lipo -info "$BIN_PATH/bleach" | grep -q arm64
           lipo -info "$BIN_PATH/bleach" | grep -q x86_64
+          # The stamped version must match the tag we are publishing.
+          test "$("$BIN_PATH/bleach" --version)" = "${{ steps.version.outputs.version }}"
 
       - name: Package
         run: |
