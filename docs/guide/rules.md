@@ -8,18 +8,25 @@ bleach rules              # print the effective rules
 bleach rules --init       # copy them to ~/.config/bleach/rules.yaml
 ```
 
-## Overlays can only add protections
+## How an overlay merges
 
-Your overlay is merged over the defaults with one deliberate asymmetry:
+Write only the keys you care about — an overlay is a handful of lines, not a
+copy of the defaults.
 
 - **List entries are appended.** You cannot remove a shipped protection by
-  overriding a list.
+  overriding a list, so the three `protected_*` lists can only ever grow.
 - **Scalars are replaced.** Thresholds are yours to set.
 - **Maps are merged**, with your value winning on a key collision.
 
-So an overlay can make bleach more careful but never less. If you genuinely
-need to act on something the defaults protect, that's what `--allow-review`
-and hand-editing a plan are for.
+So no overlay can delete a protection. It *can* still make bleach more
+aggressive in the other direction, and this is deliberate: entries you add to
+`regenerable_patterns` add new ways for a path to be judged safe to clear, and
+lowering `min_actionable_bytes` or `stale_days` widens what gets proposed. The
+file is your configuration and is trusted as such — but it is worth
+re-reading the diff before a `--mode delete`.
+
+If you need to act on something the defaults protect, that's what
+`--allow-review` and hand-editing a plan are for.
 
 ## Sections
 

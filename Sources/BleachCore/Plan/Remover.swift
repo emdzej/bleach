@@ -58,6 +58,10 @@ public struct Remover: Sendable {
         /// Only populated for `.quarantine`; the other modes have nothing to
         /// restore from.
         public var restorable: Bool
+        /// Set when the batch was disposed of but could not be journalled.
+        /// Surfaced rather than swallowed: in `delete` mode the journal is the
+        /// only remaining record of what was removed.
+        public var journalError: String?
     }
 
     public func run(
@@ -68,10 +72,10 @@ public struct Remover: Sendable {
         onProgress: ((RemovalPlan.Entry) -> Void)? = nil
     ) throws -> Report {
         if mode == .quarantine {
-            let (batch, skipped) = try quarantine.apply(
+            let (batch, skipped, journalError) = try quarantine.apply(
                 plan, batchID: batchID, validate: validate, onProgress: onProgress)
             return Report(mode: mode, batchID: batchID, removed: batch.items,
-                          skipped: skipped, restorable: true)
+                          skipped: skipped, restorable: true, journalError: journalError)
         }
 
         let fm = FileManager.default
@@ -116,9 +120,9 @@ public struct Remover: Sendable {
         // Journal even destructive modes: if someone later asks "what
         // happened to that directory", the answer should exist.
         let batch = Quarantine.Batch(id: batchID, createdAt: Date(), items: removed)
-        try? quarantine.appendJournal(batch)
+        let journalError = quarantine.appendJournal(batch)
 
         return Report(mode: mode, batchID: batchID, removed: removed,
-                      skipped: skipped, restorable: false)
+                      skipped: skipped, restorable: false, journalError: journalError)
     }
 }

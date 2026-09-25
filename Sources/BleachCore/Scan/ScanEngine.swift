@@ -188,20 +188,37 @@ public enum ScanEngine {
         let classified = annotated.map { classifier.classify(resolver.resolve($0)) }
         var finalized = classifier.applyVersionRetention(classified)
 
-        // Apply plugin hints last, and only where core did not hard-protect.
-        // This is the invariant that makes third-party plugins safe to run: a
-        // plugin can sharpen "unknown" into "orphan", but no plugin output can
-        // turn a protected path into a deletable one.
+        // Apply plugin hints last. This is the invariant that makes
+        // third-party plugins safe to run: a plugin can sharpen "unknown"
+        // (which means "core reached no verdict") into "orphan", but it can
+        // never talk core *out of* a verdict it did reach.
+        //
+        // The distinction matters because `hardProtected` marks only the five
+        // tier-0 rules. Plenty of deliberate verdicts are soft — "owner is
+        // installed", "holds user-data-shaped files", "owner ships its own
+        // cleanup", "newest of N versions, kept" — and treating those as
+        // overridable let a hint promote a live app's state directory
+        // straight to CACHE-SAFE.
+        //
+        // Note `Tier.protectiveRank` deliberately ranks `unknown` as *more*
+        // protective than `orphanLikely`, so `mostProtective` alone would
+        // also block the sharpening case the plugin API exists for. Hence the
+        // explicit split rather than a single collapse.
         for i in finalized.indices {
             guard let hint = finalized[i].pluginTierHint else { continue }
-            if finalized[i].hardProtected {
+            let core = finalized[i].tier
+
+            let resolved: Tier = core == .unknown && !finalized[i].hardProtected
+                ? hint
+                : Tier.mostProtective(core, hint)
+
+            if resolved != hint {
                 finalized[i].evidence.append(Evidence(.protectedPath,
-                    "plugin suggested \(hint.label) but a core protection takes precedence",
+                    "plugin suggested \(hint.label) but core tiered this \(core.label), which wins",
                     weight: 0))
-                continue
             }
-            finalized[i].tier = hint
-            if hint.isActionable, finalized[i].sizeBytes < rules.minActionableBytes {
+            finalized[i].tier = resolved
+            if resolved.isActionable, finalized[i].sizeBytes < rules.minActionableBytes {
                 finalized[i].tier = .unknown
             }
         }

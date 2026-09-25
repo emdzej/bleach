@@ -35,14 +35,19 @@ public struct PluginHost: Sendable {
         self.timeout = timeout
     }
 
+    /// Plugins are executed, so where bleach looks for them is a trust
+    /// decision. Both locations are ones the user chose deliberately.
+    ///
+    /// Notably absent: `./plugins` relative to the working directory. That
+    /// made `bleach scan` run arbitrary executables out of whatever directory
+    /// it happened to be invoked in — cloning a repo that ships a `plugins/`
+    /// directory was enough. Use `BLEACH_PLUGIN_PATH=./plugins` to opt in
+    /// explicitly when developing.
     public static func searchPaths(home: String = NSHomeDirectory()) -> [String] {
         var paths = ["\(home)/.config/bleach/plugins"]
         if let env = ProcessInfo.processInfo.environment["BLEACH_PLUGIN_PATH"] {
-            paths += env.split(separator: ":").map(String.init)
+            paths += env.split(separator: ":").map(String.init).filter { !$0.isEmpty }
         }
-        // Repo-local plugins, so `swift run bleach` picks up the bundled
-        // examples without an install step.
-        paths.append(FileManager.default.currentDirectoryPath + "/plugins")
         return paths
     }
 
@@ -208,8 +213,22 @@ public struct PluginHost: Sendable {
             return reject("path is not already standardised (possible traversal)")
         }
         guard std.hasPrefix(home + "/") else { return reject("outside the user's home") }
+        // Lexical prefix checks cannot see a symlinked *parent* directory, so
+        // confinement is confirmed against fully resolved paths too — both
+        // for the home and for the declared scope.
+        let resolvedHome = SafePath.resolve(home)
+        let resolved = SafePath.resolve(std)
+        guard resolved.hasPrefix(resolvedHome + "/") else {
+            return reject("resolves outside the user's home (symlinked parent directory)")
+        }
         guard plugin.ownsExpanded.contains(where: { std == $0 || std.hasPrefix($0 + "/") }) else {
             return reject("outside the plugin's declared owns: scope")
+        }
+        guard plugin.ownsExpanded.contains(where: {
+            let owned = SafePath.resolve($0)
+            return resolved == owned || resolved.hasPrefix(owned + "/")
+        }) else {
+            return reject("resolves outside the plugin's declared owns: scope")
         }
         let fm = FileManager.default
         guard fm.fileExists(atPath: std) else { return reject("does not exist") }

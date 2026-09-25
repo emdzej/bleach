@@ -95,6 +95,7 @@ public enum BleachError: Error, CustomStringConvertible {
     case quarantineUnavailable(String)
     case restoreTargetOccupied(String)
     case notFound(String)
+    case invalidBatchID(String)
 
     public var description: String {
         switch self {
@@ -106,6 +107,8 @@ public enum BleachError: Error, CustomStringConvertible {
             return "cannot restore: \(path) already exists"
         case .notFound(let what):
             return "not found: \(what)"
+        case .invalidBatchID(let id):
+            return "refusing to use \"\(id)\" as a batch ID: it must be a single path component"
         }
     }
 }

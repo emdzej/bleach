@@ -16,8 +16,10 @@ A plugin **proposes**. It never acts.
 - It never receives file contents — only paths, names, and sizes.
 - It can only speak about paths inside the scope it declared in its manifest.
   Anything else it returns is discarded and reported as a warning.
-- It cannot weaken a protection. If bleach's core rules hard-protect a path, a
-  plugin asking for it to be removed is recorded and ignored.
+- It cannot weaken a verdict. A hint can only *sharpen* `UNKNOWN`, which means
+  "core reached no conclusion", or make a verdict more protective. If core
+  tiered a path `PROTECTED`, `REVIEW`, or `CACHE-SAFE`, that wins and the
+  plugin's disagreement is recorded in the evidence trail instead.
 - Its evidence weights are clamped to ±10, so it cannot swamp core scoring.
 
 Every path a plugin returns is re-validated before bleach will even measure it:
@@ -27,17 +29,19 @@ Every path a plugin returns is re-validated before bleach will even measure it:
 3. inside one of the plugin's declared `owns` prefixes
 4. unchanged by path standardisation (blocks `..` traversal)
 5. not a symlink
+6. still inside the home *and* the declared scope once every symlink in the
+   path is resolved (blocks a symlinked parent directory)
 
 And then, because plugin output only ever becomes a *plan*, `bleach apply`
 re-validates all of it again against live state.
 
 ## Discovery
 
-bleach looks for plugins in:
+Plugins are executed, so where bleach looks for them is a trust decision.
+There are exactly two locations, both chosen deliberately by you:
 
 1. `~/.config/bleach/plugins/`
 2. every directory in `$BLEACH_PLUGIN_PATH` (colon-separated)
-3. `./plugins/` relative to the working directory
 
 A plugin is either an executable file, or a directory containing an executable
 named `plugin`. Check what was found with:
@@ -45,6 +49,19 @@ named `plugin`. Check what was found with:
 ```sh
 bleach rules --plugins
 ```
+
+Pass `--no-plugins` to any scanning command to skip discovery entirely.
+
+::: warning Not the working directory
+Earlier versions also searched `./plugins/` relative to the working directory,
+which meant running `bleach scan` inside a repository that happened to ship a
+`plugins/` directory executed its contents. If you are developing a plugin from
+a checkout, opt in explicitly:
+
+```sh
+BLEACH_PLUGIN_PATH=./plugins bleach scan
+```
+:::
 
 ## Protocol
 

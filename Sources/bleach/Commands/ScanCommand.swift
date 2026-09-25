@@ -30,6 +30,9 @@ struct Scan: ParsableCommand {
     var quiet = false
 
     func run() throws {
+        // Parsed before the scan starts: a typo in --min-size should not cost
+        // the user a full measure pass first.
+        let minSize = try flags.minSizeBytes()
         let showProgress = !quiet && !json && ANSI.isTTY
         let result = try ScanEngine.run(options: flags.options()) { phase in
             guard showProgress else { return }
@@ -38,13 +41,13 @@ struct Scan: ParsableCommand {
         if showProgress { Progress.finish() }
 
         if json {
-            try JSONOutput.emit(result, minSize: flags.minSizeBytes())
+            try JSONOutput.emit(result, minSize: minSize)
             return
         }
         Report.render(
             result,
             tierFilter: Tier.parse(tier),
-            minSize: flags.minSizeBytes(),
+            minSize: minSize,
             limit: limit,
             byOwner: byOwner,
             explain: explain

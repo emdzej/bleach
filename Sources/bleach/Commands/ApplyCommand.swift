@@ -19,7 +19,7 @@ struct Apply: ParsableCommand {
     @Argument(help: "Plan file written by `bleach plan`.")
     var planPath: String
 
-    @Flag(name: .long, help: "Show what would happen and exit. This is the default unless --yes is given.")
+    @Flag(name: .long, help: "Show what would happen and exit. Wins over --yes. This is also the default when neither is given.")
     var dryRun = false
 
     @Flag(name: .long, help: "Actually move the files.")
@@ -88,7 +88,9 @@ struct Apply: ParsableCommand {
             return
         }
 
-        if !yes {
+        // `--dry-run` wins over `--yes`. It was previously declared and never
+        // read, so passing both moved the files.
+        if dryRun || !yes {
             print("  " + ANSI.grey("mode: ") + ANSI.bold(mode.label)
                 + ANSI.grey(" — " + mode.summary))
             print("")
@@ -98,7 +100,9 @@ struct Apply: ParsableCommand {
             }
             if permitted.count > 20 { print("  " + ANSI.grey("… \(permitted.count - 20) more")) }
             print("")
-            print("  " + ANSI.grey("dry run — nothing changed. Re-run with --yes to proceed."))
+            print("  " + ANSI.grey(dryRun && yes
+                ? "dry run — --dry-run overrides --yes, so nothing changed."
+                : "dry run — nothing changed. Re-run with --yes to proceed."))
             print("")
             return
         }
@@ -181,6 +185,11 @@ enum ApplyRunner {
         for skip in report.skipped {
             print("  " + ANSI.yellow("skip ") + ANSI.truncateHead(skip.path, to: 52)
                 + " — " + ANSI.grey(skip.reason))
+        }
+        if let journalError = report.journalError {
+            // Worth shouting about in `delete` mode, where the journal is the
+            // only surviving record of what was removed.
+            print("  " + ANSI.yellow("! could not write the journal: ") + journalError)
         }
         print("")
         if report.restorable {

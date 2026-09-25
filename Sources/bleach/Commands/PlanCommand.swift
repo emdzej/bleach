@@ -26,6 +26,7 @@ struct Plan: ParsableCommand {
     var stdout = false
 
     func run() throws {
+        let minSize = try flags.minSizeBytes()
         let requested = tiers.split(separator: ",").compactMap { Tier.parse(String($0)) }
         guard !requested.isEmpty else {
             throw ValidationError("no recognisable tiers in --tiers \(tiers)")
@@ -37,7 +38,6 @@ struct Plan: ParsableCommand {
         }
         if showProgress { Progress.finish() }
 
-        let minSize = flags.minSizeBytes()
         let chosen = result.candidates.filter {
             requested.contains($0.tier)
                 && !$0.supersededByChildren

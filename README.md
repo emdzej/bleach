@@ -122,8 +122,10 @@ distinct classes:
 ## Extending
 
 **Rules** are YAML, not code — `bleach rules --init` writes a copy to
-`~/.config/bleach/rules.yaml`. List entries in your overlay are *appended* to
-the defaults, so an override can only ever add protections, never remove one.
+`~/.config/bleach/rules.yaml`, and an overlay only needs the keys you care
+about. List entries are *appended* to the defaults, so an overlay can never
+remove a shipped protection (it can still widen what gets proposed, by adding
+`regenerable_patterns` or lowering a threshold).
 → [Rules](https://bleach.emdzej.pl/guide/rules)
 
 **Plugins** are plain executables speaking JSON on stdio, so community

@@ -14,7 +14,7 @@ struct TUI: ParsableCommand {
     @Option(name: [.short, .long], help: "Where to write a plan if you press `w`.")
     var output: String = "bleach-plan.json"
 
-    @Flag(name: .long, help: "Permit selecting REVIEW and UNKNOWN rows when applying from the TUI.")
+    @Flag(name: .long, help: "Permit applying REVIEW and UNKNOWN rows. They can always be selected; without this they are refused at apply time.")
     var allowReview = false
 
     func run() throws {

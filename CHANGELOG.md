@@ -8,6 +8,92 @@ Tags and releases use bare version numbers, without a `v` prefix.
 
 ## [Unreleased]
 
+## [0.2.0] — 2026-09-25
+
+A correctness and safety release: the findings from a full audit of the
+codebase. Every item below was reproduced with a test before being fixed, and
+each has a regression test. The suite grew from 39 to 73 tests.
+
+Two behaviour changes to know about when upgrading:
+
+- **Plugins are no longer discovered in the working directory.** If you were
+  relying on `./plugins/` being picked up from a checkout, use
+  `BLEACH_PLUGIN_PATH=./plugins` instead.
+- **`apply --dry-run` now wins over `--yes`.** Previously the flag was
+  ignored, so passing both moved files.
+
+### Fixed
+
+- **`quarantine --purge` could delete directories outside the quarantine.**
+  A batch's `id` was read from its `manifest.json` and interpolated into the
+  path passed to `removeItem`, guarded only by a `hasPrefix` string check that
+  `..` segments pass straight through. A batch is now identified by its
+  directory name, which must be a single ordinary path component. This was the
+  only irreversible code path in the tool.
+- **`restore` validated nothing.** `originalPath` and `storedName` were taken
+  from the manifest and used directly as move destinations and sources, so a
+  hand-edited or corrupted manifest could write anywhere the user could write.
+  Both are now validated, sharing the same path-shape checks as `apply`.
+- **A plugin's tier hint could overrule a core verdict.** The hint was applied
+  unconditionally unless a path was `hardProtected`, which marks only the five
+  tier-0 rules — so a hint could promote `REVIEW` ("holds user-data-shaped
+  files") or a soft `PROTECTED` ("owner is installed") straight to
+  `CACHE-SAFE` and into a plan. A hint can now only sharpen `UNKNOWN` or make
+  a verdict more protective; disagreements are recorded in the evidence trail.
+- **Plugins were discovered in the working directory.** `./plugins/` was
+  searched relative to wherever bleach was invoked, so running a scan inside a
+  repository that ships a `plugins/` directory executed its contents. Removed;
+  use `BLEACH_PLUGIN_PATH` to opt in. Added `--no-plugins` to skip discovery.
+- **A symlinked parent directory escaped the home-directory confinement.**
+  The check was lexical and the symlink test covered the leaf only, so with
+  `~/Library/Caches` relocated to another volume — a routine disk-space move
+  on the highest-traffic scan root — `apply` would act on paths outside the
+  home. Confinement is now confirmed against fully resolved paths, at both the
+  plan and the plugin boundary.
+- **A partial `rules.yaml` overlay failed to load.** Swift's synthesised
+  `Decodable` ignores property defaults, so an overlay threw `keyNotFound` on
+  the first key it did not contain — including the worked example in the
+  documentation. Overlays now need only the keys you care about, a
+  comments-only file is treated as no overlay, and a threshold set to the same
+  value as the default is no longer silently ignored.
+- **bleach could plan the removal of its own quarantine.** `~/.local/state`
+  is a scan root, so a quarantine untouched for `stale_days` classified as
+  `ORPHAN?` and became plannable; `--mode delete` would then destroy the undo
+  history for everything bleach had ever moved. Now excluded from scanning and
+  protected by default.
+- **`apply --dry-run` did nothing.** The flag was declared and never read, so
+  `--dry-run --yes` moved files. `--dry-run` now wins over `--yes`.
+- **A path flattening to `manifest.json` overwrote its own batch manifest.**
+  `~/manifest.json` stored as exactly that name, and the manifest write then
+  clobbered it: the file was lost and the batch record corrupted. The name is
+  now reserved.
+- **A failed manifest write left a batch unrestorable.** The manifest was
+  written only after every rename, so a failure stranded the files with no
+  record. A skeleton manifest is now written before the first move, and the
+  journal is written before the manifest rewrite.
+- **Version retention could promote a `REVIEW` verdict to actionable.**
+  Retention demoted anything not `hardProtected`, which included deliberate
+  "a human needs to look at this" verdicts — delegated cleanups and launchd
+  jobs. It now only demotes the verdicts it is meant to.
+- **`--min-size` silently meant "no minimum" on unreadable input.**
+  `--min-size 100MB` parsed as `0` and *widened* a plan to everything instead
+  of narrowing it. Unreadable values are now a usage error, `2GB` is accepted,
+  and the value is parsed before the scan starts rather than after.
+- **Journal write failures were swallowed.** In `delete` mode the journal is
+  the only surviving record of what was removed, so a failure is now reported.
+  The journal is also opened `O_APPEND`, so concurrent runs cannot interleave
+  a line.
+- `quarantine --purge` reported the size it previewed rather than the size it
+  actually freed.
+- `tui --allow-review` described itself as gating row *selection*; it gates
+  apply-time validation. Rows could always be selected.
+
+### Added
+
+- `--no-plugins` on `scan`, `tui`, and `plan`.
+- CI now exercises `plan` → `apply` → `restore` → `purge` end to end, plus a
+  partial rules overlay and `--min-size` validation.
+
 ## [0.1.1] — 2026-09-17
 
 Packaging only. The binary is functionally identical to 0.1.0.
@@ -136,6 +222,7 @@ First release.
   until the quarantine attribute is cleared.
 - Untested below macOS 13.
 
-[Unreleased]: https://github.com/emdzej/bleach/compare/0.1.1...HEAD
+[Unreleased]: https://github.com/emdzej/bleach/compare/0.2.0...HEAD
+[0.2.0]: https://github.com/emdzej/bleach/compare/0.1.1...0.2.0
 [0.1.1]: https://github.com/emdzej/bleach/compare/0.1.0...0.1.1
 [0.1.0]: https://github.com/emdzej/bleach/releases/tag/0.1.0

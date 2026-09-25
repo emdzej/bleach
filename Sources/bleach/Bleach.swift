@@ -14,7 +14,7 @@ struct Bleach: ParsableCommand {
         Nothing is ever deleted outright: `apply` moves state into a \
         quarantine you can restore from. Scanning is always read-only.
         """,
-        version: "0.1.0",
+        version: "0.2.0",
         subcommands: [Scan.self, TUI.self, Plan.self, Apply.self,
                       Restore.self, QuarantineCommand.self, RulesCommand.self],
         defaultSubcommand: Scan.self
@@ -29,21 +29,43 @@ struct ScanFlags: ParsableArguments {
     @Flag(name: .long, help: "Skip the lsregister dump. Faster, slightly less complete.")
     var fastInventory = false
 
-    @Option(name: .long, help: "Only report candidates at or above this size, e.g. 100M.")
+    @Option(name: .long, help: "Only report candidates at or above this size, e.g. 100M or 2GB.")
     var minSize: String?
 
+    @Flag(name: .long, help: "Do not discover or run plugins.")
+    var noPlugins = false
+
     func options() -> ScanOptions {
-        ScanOptions(rulesPath: rules, includeLaunchServices: !fastInventory)
+        ScanOptions(
+            rulesPath: rules,
+            includeLaunchServices: !fastInventory,
+            enablePlugins: !noPlugins
+        )
     }
 
-    /// Parse `500M` / `2G` / `1048576`.
-    func minSizeBytes() -> Int64 {
-        guard var s = minSize?.uppercased(), !s.isEmpty else { return 0 }
-        let multipliers: [(String, Int64)] = [("T", 1 << 40), ("G", 1 << 30), ("M", 1 << 20), ("K", 1 << 10)]
-        for (suffix, mult) in multipliers where s.hasSuffix(suffix) {
+    /// Parse `500M` / `2GB` / `1048576`.
+    ///
+    /// Throws rather than defaulting to 0 on garbage. A silent 0 means "no
+    /// minimum", so `--min-size 100MB` used to *widen* a plan to everything
+    /// instead of narrowing it to large directories — the opposite of what
+    /// was asked for, with no indication anything was wrong.
+    func minSizeBytes() throws -> Int64 {
+        guard var s = minSize?.trimmingCharacters(in: .whitespaces).uppercased(),
+              !s.isEmpty else { return 0 }
+        var multiplier: Int64 = 1
+        if s.hasSuffix("B") { s.removeLast() }          // 2GB and 2G both work
+        let units: [(Character, Int64)] = [
+            ("T", 1 << 40), ("G", 1 << 30), ("M", 1 << 20), ("K", 1 << 10),
+        ]
+        if let last = s.last, let unit = units.first(where: { $0.0 == last }) {
+            multiplier = unit.1
             s.removeLast()
-            return Int64(Double(s) ?? 0) * mult
         }
-        return Int64(s) ?? 0
+        guard let value = Double(s), value >= 0, value.isFinite else {
+            throw ValidationError(
+                "could not read --min-size \"\(minSize!)\"; expected a number "
+                + "with an optional K/M/G/T suffix, e.g. 100M")
+        }
+        return Int64(value * Double(multiplier))
     }
 }

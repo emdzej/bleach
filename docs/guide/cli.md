@@ -22,7 +22,8 @@ Accepted by `scan`, `tui`, and `plan`:
 | --- | --- |
 | `--rules <path>` | Rules overlay. Default `~/.config/bleach/rules.yaml`. |
 | `--fast-inventory` | Skip the `lsregister` dump. Faster, slightly less complete. |
-| `--min-size <size>` | Only consider candidates at or above this size. Accepts `500K`, `100M`, `2G`, or raw bytes. |
+| `--min-size <size>` | Only consider candidates at or above this size. Accepts `500K`, `100M`, `2G`, `2GB`, or raw bytes. An unreadable value is a usage error, not a silent zero. |
+| `--no-plugins` | Skip plugin discovery and execution entirely. |
 
 ## bleach scan
 
@@ -73,7 +74,7 @@ bleach tui [-o <output>] [--allow-review]
 | Option | Description |
 | --- | --- |
 | `-o, --output <path>` | Where to write a plan if you press `w`. Default `bleach-plan.json`. |
-| `--allow-review` | Permit `REVIEW` and `UNKNOWN` rows when applying from the TUI. |
+| `--allow-review` | Permit *applying* `REVIEW` and `UNKNOWN` rows. They can always be selected; without this they are refused at apply time. |
 
 See [The TUI](/guide/tui) for keybindings.
 
@@ -101,13 +102,13 @@ bleach plan --stdout | jq -r '.entries[].path'
 ## bleach apply
 
 ```
-bleach apply <plan-path> [--yes] [--mode <mode>] [--allow-review] [--fast-inventory]
+bleach apply <plan-path> [--yes] [--dry-run] [--mode <mode>] [--allow-review] [--fast-inventory]
 ```
 
 | Option | Description |
 | --- | --- |
 | `<plan-path>` | Plan file written by `bleach plan`. |
-| `--dry-run` | Show what would happen. **The default** unless `--yes` is given. |
+| `--dry-run` | Show what would happen and stop. **Wins over `--yes`**, and is also the default when neither is given. |
 | `--yes` | Actually do it. |
 | `--mode <mode>` | `quarantine` (default), `trash`, or `delete`. |
 | `--allow-review` | Permit `REVIEW` and `UNKNOWN` entries, refused by default. |
@@ -185,7 +186,7 @@ bleach rules --plugins
 
 | Variable | Effect |
 | --- | --- |
-| `BLEACH_PLUGIN_PATH` | Colon-separated extra plugin directories. |
+| `BLEACH_PLUGIN_PATH` | Colon-separated extra plugin directories. The only way to load a plugin from outside `~/.config/bleach/plugins/`. |
 | `NO_COLOR` | Disable ANSI colour. |
 | `TERM=dumb` | Disable ANSI colour. |
 

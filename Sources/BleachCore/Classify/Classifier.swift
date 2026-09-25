@@ -154,7 +154,14 @@ public struct Classifier: Sendable {
                 } else if !out[idx].hardProtected {
                     out[idx].evidence.append(Evidence(.versionSibling,
                         "superseded: \(rank) newer version(s) of this state exist", weight: -6))
-                    if out[idx].sizeBytes >= rules.rules.minActionableBytes,
+                    // Only the verdicts this rule is meant to demote. REVIEW
+                    // is a deliberate "a human needs to look at this" —
+                    // delegated cleanups, launchd jobs, user-data-shaped
+                    // contents — and `hardProtected` does not cover it,
+                    // because that flag marks only the tier-0 rules.
+                    let demotable = out[idx].tier == .protected || out[idx].tier == .unknown
+                    if demotable,
+                       out[idx].sizeBytes >= rules.rules.minActionableBytes,
                        !out[idx].evidence.contains(where: { $0.kind == .userDataMarker }) {
                         out[idx].tier = .orphanLikely
                     }

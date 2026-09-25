@@ -84,8 +84,11 @@ struct QuarantineCommand: ParsableCommand {
                 return
             }
             let purged = try quarantine.purge(olderThanDays: threshold)
+            // Reported from what was purged, not from the preview: the two can
+            // differ if a batch changed between listing and purging.
+            let freed = purged.reduce(Int64(0)) { $0 + $1.totalBytes }
             print("  purged \(purged.count) batches, "
-                + ByteFormat.short(bytes).trimmingCharacters(in: .whitespaces) + " freed")
+                + ByteFormat.short(freed).trimmingCharacters(in: .whitespaces) + " freed")
             print("")
             return
         }

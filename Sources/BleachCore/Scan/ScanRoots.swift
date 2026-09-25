@@ -104,8 +104,14 @@ public enum ScanRoots {
                      kind: .cache, multiTenantChildren: defaultMultiTenant),
             ScanRoot(id: "xdg-data", path: home.appendingPathComponent(".local/share").path,
                      kind: .state),
+            // `bleach` is excluded because that is where the quarantine and
+            // the journal live. Left in, a quarantine nobody had touched for
+            // `stale_days` classified as ORPHAN? and landed in a plan — so
+            // `apply --mode delete` would destroy the undo history for
+            // everything bleach had ever moved. `bleach quarantine` is the
+            // command for inspecting its size.
             ScanRoot(id: "xdg-state", path: home.appendingPathComponent(".local/state").path,
-                     kind: .state),
+                     kind: .state, excludeChildren: ["bleach"]),
             ScanRoot(id: "dotdirs", path: home.path, kind: .state,
                      filter: .dotDirectoriesOnly,
                      excludeChildren: [".cache", ".local", ".config", ".Trash"]),

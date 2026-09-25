@@ -63,6 +63,58 @@ jobs:
               | "$plugin" enumerate | python3 -c 'import json,sys; json.load(sys.stdin)'
           done
 
+      # The destructive path, end to end, against a directory created for the
+      # purpose. This was the gap that let a broken `--rules` overlay and a
+      # no-op `--dry-run` ship green: every other smoke test avoids `apply`.
+      - name: Smoke test plan, apply, restore, purge
+        run: |
+          set -euo pipefail
+          BIN="$PWD/.build/release/bleach"
+          PROBE="$HOME/.cache/bleach-ci-probe"
+          rm -rf "$PROBE" && mkdir -p "$PROBE"
+          dd if=/dev/zero of="$PROBE/blob.bin" bs=1m count=12 2>/dev/null
+          BYTES=$(( $(du -k "$PROBE" | tail -1 | cut -f1) * 1024 ))
+
+          cat > plan.json <<JSON
+          { "version": 1, "createdAt": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "home": "$HOME",
+            "entries": [ { "path": "$PROBE", "sizeBytes": $BYTES,
+                           "tier": "cacheSafe", "reasons": ["ci probe"] } ] }
+          JSON
+
+          # --dry-run wins over --yes and must not move anything.
+          "$BIN" apply plan.json --dry-run --yes --fast-inventory
+          test -d "$PROBE" || { echo "FAIL: --dry-run moved the probe"; exit 1; }
+
+          "$BIN" apply plan.json --yes --fast-inventory
+          test ! -d "$PROBE" || { echo "FAIL: apply did not quarantine"; exit 1; }
+
+          BATCH=$("$BIN" quarantine | awk '/^  2[0-9]/ { print $1; exit }')
+          test -n "$BATCH" || { echo "FAIL: batch not listed"; exit 1; }
+          "$BIN" restore "$BATCH"
+          test -f "$PROBE/blob.bin" || { echo "FAIL: restore did not bring it back"; exit 1; }
+
+          "$BIN" quarantine --purge --all --yes
+          rm -rf "$PROBE" plan.json
+          echo "round trip OK"
+
+      # A partial overlay is what the docs recommend, and it used to throw
+      # keyNotFound on the first key the user had not written.
+      - name: Smoke test a partial rules overlay
+        run: |
+          set -euo pipefail
+          BIN="$PWD/.build/release/bleach"
+          printf 'protected_names:\n  - .experiments\n' > overlay.yaml
+          "$BIN" plan --rules overlay.yaml --fast-inventory --no-plugins -o "$RUNNER_TEMP/plan-probe.json"
+          printf '# only a comment\n' > comments.yaml
+          "$BIN" plan --rules comments.yaml --fast-inventory --no-plugins -o "$RUNNER_TEMP/plan-probe.json"
+          # An unreadable --min-size must fail loudly, not silently mean "no minimum".
+          if "$BIN" plan --min-size nonsense --fast-inventory -o "$RUNNER_TEMP/plan-probe.json"; then
+            echo "FAIL: --min-size nonsense was accepted"; exit 1
+          fi
+          rm -f overlay.yaml comments.yaml
+          echo "rules overlay OK"
+
       - name: Verify the TUI degrades without a terminal
         run: |
           # Must exit cleanly with a message rather than hanging or crashing.

@@ -81,6 +81,24 @@ Without `--yes` it prints what would go and stops:
   Re-run with --yes to confirm.
 ```
 
+## What bleach trusts in there
+
+A `manifest.json` is a file on disk: it can be hand-edited, truncated, or
+restored from a backup of a different machine. So bleach reads it as data, not
+as instructions.
+
+- A batch's identity is its **directory name**, not the `id` field inside its
+  manifest. Directory names are checked to be a single, ordinary path
+  component, so nothing built from one can climb out of the quarantine.
+- `restore` validates every entry before moving anything: the stored filename
+  has to stay inside the batch directory, and the destination gets the same
+  checks `apply` uses — absolute, standardised, and inside your home once
+  symlinks are resolved. Anything else is skipped with a reason.
+- `purge` only ever removes directories it found by listing its own root.
+
+The quarantine is also excluded from scanning, so bleach never proposes
+removing its own undo history. Use `bleach quarantine` to see its size.
+
 ## Space accounting
 
 A quarantined path still occupies disk — it was renamed, not removed. `du` on

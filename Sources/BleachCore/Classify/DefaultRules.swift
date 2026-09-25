@@ -1,9 +1,14 @@
 import Foundation
 
 extension Rules {
-    /// Shipped defaults. Users extend these via `~/.config/bleach/rules.yaml`;
-    /// list entries are appended, so a user override can only ever add
-    /// protections, never remove one.
+    /// Shipped defaults. Users extend these via `~/.config/bleach/rules.yaml`.
+    ///
+    /// Entries in the three `protected_*` lists are appended, so an overlay
+    /// can never remove a shipped protection. That guarantee does not extend
+    /// to the rest of the file: `regenerable_patterns` is also appended but
+    /// adds ways for a path to be judged *safe*, and the thresholds are
+    /// replaced outright. An overlay is the user's own config and is trusted
+    /// to make bleach more aggressive if that is what it says.
     ///
     /// The alias entries here were verified against this machine's
     /// LaunchServices registry rather than guessed. Anything unverified is
@@ -39,6 +44,10 @@ extension Rules {
       - com.apple.security
       - .licence
       - .license
+      # bleach's own quarantine and journal. Excluded from scanning outright
+      # (see ScanRoots), but a hand-written plan bypasses scanning entirely
+      # and `apply` must still refuse it.
+      - /.local/state/bleach
 
     protected_names:
       # Credentials and key material. These are small, so bleach would never

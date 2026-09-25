@@ -38,11 +38,11 @@ public struct ApplyValidator: Sendable {
         let path = entry.path
 
         // --- shape -------------------------------------------------------
-        guard path.hasPrefix("/") else { return "not an absolute path" }
-        let standardized = URL(fileURLWithPath: path).standardizedFileURL.path
-        guard standardized == path else { return "path is not standardised (possible traversal)" }
-        guard path.hasPrefix(home + "/") else { return "outside your home directory" }
-        guard path != home else { return "is your home directory" }
+        // Shared with `restore` via SafePath, which also resolves symlinked
+        // parent directories: the lexical home-prefix check alone permits
+        // `~/Library/Caches/Foo` when `~/Library/Caches` is a symlink to
+        // another volume.
+        if let reason = SafePath.shapeRefusal(path, home: home) { return reason }
 
         // --- existence and type ------------------------------------------
         guard fm.fileExists(atPath: path) else { return "no longer exists" }
