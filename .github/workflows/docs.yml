@@ -26,16 +26,16 @@ jobs:
     timeout-minutes: 10
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0   # VitePress lastUpdated needs git history
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
 
-      - uses: actions/configure-pages@v5
+      - uses: actions/configure-pages@v6
 
       - run: npm ci
       - run: npm run docs:build
@@ -48,7 +48,12 @@ jobs:
           test -f docs/.vitepress/dist/CNAME
           cat docs/.vitepress/dist/CNAME
 
-      - uses: actions/upload-pages-artifact@v3
+      # upload-pages-artifact excludes dotfiles since v4. The VitePress
+      # output has none today (CNAME is not one), so the default is fine — but
+      # adding anything like `.nojekyll` or `.well-known/` means setting
+      # `include-hidden-files: true` here, or it will vanish from the deploy
+      # without an error.
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: docs/.vitepress/dist
 
@@ -60,4 +65,4 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
