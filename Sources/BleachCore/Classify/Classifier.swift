@@ -31,20 +31,51 @@ public struct Classifier: Sendable {
             c.evidence.append(Evidence(.protectedPath, "\"\(leaf)\" is a protected name", weight: 20))
             return finish(&c, .protected, "protected name", hard: true)
         }
-        if let id = c.owner?.bundleID ?? bundleIDGuess(c), let prefix = rules.isProtectedBundleID(id) {
-            c.evidence.append(Evidence(.protectedPath,
-                "bundle ID \(id) matches protected prefix \(prefix)", weight: 20))
-            return finish(&c, .protected, "protected bundle prefix", hard: true)
-        }
         // ---- 1. Delegated cleanups ----------------------------------------
         // Ahead of the nested-app rule on purpose: ms-playwright's browser
         // caches contain registered .app bundles but are fully reinstallable,
         // and REVIEW is non-actionable either way.
+        //
+        // Ahead of the protected-bundle-prefix rule for the same reason, plus
+        // a sharper one: a delegated-cleanup entry is curated, specific
+        // knowledge ("this directory belongs to a tool that ships its own
+        // retention policy"), while a bundle-prefix match is a heuristic that
+        // fires on whatever the resolver guessed the owner to be. Those
+        // guesses go wrong on generic names — `CoreSimulator/Devices`
+        // name-matched Spotlight's `com.apple.dt.Devices` and inherited the
+        // blanket `com.apple.` protection, which also made the shipped
+        // `com.apple.dt.Xcode` delegated entry unreachable from the day it was
+        // written.
+        //
+        // This ordering cannot make anything deletable: delegation yields
+        // REVIEW, which is non-actionable without `--allow-review`. It only
+        // ever turns a PROTECTED verdict into a REVIEW that carries the right
+        // command. The explicit data protections — a live process, a protected
+        // path, a protected name — are all still ahead of it.
         if let command = rules.rules.delegatedCleanups[leaf]
             ?? rules.rules.delegatedCleanups[c.name.split(separator: "/").first.map(String.init) ?? ""] {
             c.evidence.append(Evidence(.delegatedCleanup,
                 "owner ships its own cleanup: `\(command)`", weight: 0))
             return finish(&c, .review, "delegated")
+        }
+
+        // A vendor-prefixed directory that is regenerable anyway — an
+        // updater's staging area inherits its vendor's bundle prefix without
+        // inheriting the reason that prefix is protected. Evaluated here, so
+        // it sits after every other tier-0 protection (live process,
+        // protected path, protected name) and can bypass this rule alone.
+        let exemptPattern = rules.isRegenerableDespiteBundlePrefix(name: leaf)
+        if let id = c.owner?.bundleID ?? bundleIDGuess(c), let prefix = rules.isProtectedBundleID(id) {
+            if let exemptPattern {
+                c.evidence.append(Evidence(.cacheRule,
+                    "bundle ID \(id) matches protected prefix \(prefix), but "
+                        + "\(exemptPattern) marks this regenerable regardless",
+                    weight: 0))
+            } else {
+                c.evidence.append(Evidence(.protectedPath,
+                    "bundle ID \(id) matches protected prefix \(prefix)", weight: 20))
+                return finish(&c, .protected, "protected bundle prefix", hard: true)
+            }
         }
 
         // Self-updating apps (Raycast, many Electron apps) keep their real

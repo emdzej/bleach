@@ -119,7 +119,29 @@ regenerable_patterns:
   - "ShaderCache"
   - "Crashpad"
   - "\\.log$"
+  - "DeviceSupport$"        # Xcode device symbols, re-extracted on attach
 ```
+
+### `regenerable_despite_bundle_prefix`
+
+The one list that can step around a tier-0 protection, so it is deliberately
+tiny and every entry has to earn its place.
+
+An updater's staging directory inherits its vendor's bundle identifier without
+inheriting the reason that vendor is protected. Squirrel.Mac stages a
+downloaded update in `<bundle-id>.ShipIt`: VS Code's *workspace state* is not
+reconstructible, which is why `com.microsoft.VSCode` is a protected prefix, but
+its downloaded installer is re-fetched on the next update check. Without this,
+1.4 GB of stale payload sat permanently in `PROTECTED` and was never proposed.
+
+```yaml
+regenerable_despite_bundle_prefix:
+  - "\\.ShipIt$"
+```
+
+Only the bundle-prefix heuristic is bypassed. A protected path, a protected
+name, a live process, or a registered `.app` bundle living inside all still
+win, and entries here count as `regenerable_patterns` in their own right.
 
 ### `delegated_cleanups`
 
@@ -131,6 +153,8 @@ understand.
 delegated_cleanups:
   "Homebrew": "brew cleanup --prune=all"
   "pnpm": "pnpm store prune"
+  "CoreSimulator": "xcrun simctl delete unavailable"
+  "DerivedData": "rm -rf ~/Library/Developer/Xcode/DerivedData  (Xcode rebuilds indexes)"
   ".npm": "npm cache clean --force"
   ".m2": "rm -rf ~/.m2/repository  (redownloaded by the next build)"
   ".gradle": "gradle --stop, then rm -rf ~/.gradle/caches"
@@ -142,9 +166,24 @@ This is the single highest-value section: on the development machine it
 surfaced roughly **50 GB** of cleanup that the owning tools do correctly and
 bleach would do badly.
 
+Keys match either the candidate's leaf name or the first component of its
+path-relative name, so `"CoreSimulator"` covers every child of
+`~/Library/Developer/CoreSimulator`.
+
 Delegated entries are checked *before* the nested-app-bundle protection, so
 `ms-playwright` — whose browser caches contain registered `.app` bundles but
-are fully reinstallable — gets reported rather than silently protected.
+are fully reinstallable — gets reported rather than silently protected. The
+same applies to `DerivedData`, which holds a registered `.app` for any build
+you have launched.
+
+They are also checked before the protected-bundle-prefix heuristic. A
+delegated entry is curated knowledge about a specific directory, while a bundle
+prefix fires on whatever the resolver guessed the owner to be — and generic
+names guess wrong. `CoreSimulator/Devices` name-matched Apple's
+`com.apple.dt.Devices` and inherited the blanket `com.apple.` protection, which
+also left the shipped `com.apple.dt.Xcode` entry unreachable. Since delegation
+yields non-actionable `REVIEW`, the ordering can only ever turn a blunt
+protection into useful advice.
 
 ### Thresholds
 

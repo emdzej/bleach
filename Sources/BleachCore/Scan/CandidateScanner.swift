@@ -8,6 +8,25 @@ public enum CandidateScanner {
         var out: [Candidate] = []
 
         for root in roots {
+            // A root can be a candidate in its own right rather than a
+            // container of them. `~/Library/pnpm` is the case that needs it:
+            // the useful unit is the whole store, and its *children* (`store`,
+            // `global`) are meaningless on their own — and would not match the
+            // `pnpm` delegated-cleanup rule either.
+            if !root.enumerateChildren {
+                var isDir: ObjCBool = false
+                guard fm.fileExists(atPath: root.path, isDirectory: &isDir) else { continue }
+                out.append(Candidate(
+                    path: root.path,
+                    name: (root.path as NSString).lastPathComponent,
+                    rootID: root.id,
+                    kind: root.kind,
+                    isDirectory: isDir.boolValue,
+                    requiresRoot: root.requiresRoot
+                ))
+                continue
+            }
+
             guard let entries = try? fm.contentsOfDirectory(atPath: root.path) else { continue }
             for entry in entries.sorted() {
                 if entry == ".DS_Store" || entry == ".localized" { continue }

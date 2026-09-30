@@ -4,7 +4,7 @@
 
 | | Read | Acted on |
 | --- | --- | --- |
-| `~/Library` (11 roots), `~/.cache`, `~/.local/{share,state}`, `~` dotdirs | yes | **yes** |
+| `~/Library` (13 roots), `~/.cache`, `~/.local/{share,state}`, `~` dotdirs | yes | **yes** |
 | `/Library/{Application Support,Caches,Logs}` | yes | **never** |
 | `/Applications`, `/System/Applications`, `/var/db/receipts`, `/opt/homebrew`, `/usr/local`, `/Library/Launch*`, `lsregister`, `ps` | for attribution only | never candidates |
 
@@ -15,7 +15,15 @@ this?"* is answered home-only.
 
 Under `~/Library`: `Application Support`, `Caches`, `Containers`,
 `Group Containers`, `HTTPStorages`, `WebKit`, `Saved Application State`,
-`Logs`, `Preferences`, `Application Scripts`, `LaunchAgents`.
+`Logs`, `Preferences`, `Application Scripts`, `LaunchAgents`, `Developer`,
+`pnpm`.
+
+`~/Library` is scanned at *named* subdirectories rather than wholesale, which
+is deliberate — `Mail`, `Messages` and `Keychains` are siblings of the rest —
+but it means anything not on the list is invisible no matter how large. Two
+were: **8.5 GB under `Developer`** (Xcode symbols, build products, simulators)
+and **5.4 GB of pnpm store**, which lives in `~/Library/pnpm` on macOS rather
+than under `~/.cache`.
 
 Outside it: `~/.cache`, `~/.local/share`, `~/.local/state`, and dot-directories
 directly in `~`.

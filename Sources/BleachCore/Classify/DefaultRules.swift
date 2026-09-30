@@ -48,6 +48,14 @@ extension Rules {
       # (see ScanRoots), but a hand-written plan bypasses scanning entirely
       # and `apply` must still refuse it.
       - /.local/state/bleach
+      # Xcode archives are shipped builds and their dSYMs: the only copy of
+      # the symbols for a version already in users' hands. Path-scoped rather
+      # than a protected name, so an unrelated directory called "Archives"
+      # stays judgeable on its own evidence.
+      - /Xcode/Archives
+      # Key bindings, themes, breakpoints, snippets. Small, hand-made, and
+      # not reconstructible.
+      - /Xcode/UserData
 
     protected_names:
       # Credentials and key material. These are small, so bleach would never
@@ -114,6 +122,31 @@ extension Rules {
       - "\\.log$"
       - "^tmp$"
       - "^temp$"
+      # Symbols copied off a device when you first attach it, re-extracted on
+      # the next attach. Matches the watchOS and tvOS variants too, and is
+      # routinely the largest thing under ~/Library/Developer.
+      - "DeviceSupport$"
+
+    # ---------------------------------------------------------------------
+    # Regenerable *even though* the owner's bundle prefix is protected.
+    #
+    # This is the one list that can step around a tier-0 protection, so it is
+    # deliberately tiny and every entry has to earn its place.
+    #
+    # Squirrel.Mac stages a downloaded update in `<bundle-id>.ShipIt`, which
+    # means the directory inherits a vendor prefix that may be protected for a
+    # completely unrelated reason: VS Code's *workspace state* is not
+    # reconstructible, but its update staging area is — it is re-downloaded on
+    # the next update check. Without this, 1.4 GB of stale installer payload
+    # was permanently PROTECTED and never even proposed.
+    #
+    # Only the bundle-prefix heuristic is bypassed. A protected path, a
+    # protected name, a live process, or a registered .app bundle living
+    # inside all still win, and entries here are treated as regenerable
+    # patterns in their own right.
+    # ---------------------------------------------------------------------
+    regenerable_despite_bundle_prefix:
+      - "\\.ShipIt$"
 
     # ---------------------------------------------------------------------
     # Owners that ship their own cleanup with their own retention logic.
@@ -133,6 +166,18 @@ extension Rules {
       "deno": "deno clean"
       "JetBrains": "JetBrains Toolbox > settings > clear old caches"
       "com.apple.dt.Xcode": "xcrun simctl delete unavailable"
+      # Matched on the first path component, so every candidate under
+      # ~/Library/Developer/CoreSimulator delegates. Deleting a device
+      # directory by hand destroys that simulator's installed apps and data;
+      # simctl removes only devices whose runtime is already gone.
+      "CoreSimulator": "xcrun simctl delete unavailable"
+      # Delegated rather than marked regenerable, even though a rebuild is all
+      # it costs: DerivedData routinely holds a *registered* .app bundle — any
+      # build you have launched — which the nested-app rule hard-protects. A
+      # regenerable pattern therefore produced CACHE-SAFE or PROTECTED
+      # depending on whether you had ever run the app, which is not a verdict
+      # anyone can predict. Delegating states the remedy plainly instead.
+      "DerivedData": "rm -rf ~/Library/Developer/Xcode/DerivedData  (Xcode rebuilds indexes)"
       # Build and package caches living in dotdirs. All redownloadable, all
       # large, none safe to blind-delete while a build is running.
       ".npm": "npm cache clean --force"

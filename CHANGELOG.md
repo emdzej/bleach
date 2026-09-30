@@ -8,6 +8,50 @@ Tags and releases use bare version numbers, without a `v` prefix.
 
 ## [Unreleased]
 
+### Added
+
+- **`~/Library/Developer` is now scanned.** 8.5 GB on the machine this was
+  added against, none of it previously visible: `~/Library` is scanned at
+  named subdirectories rather than wholesale, so anything absent from that
+  list was invisible regardless of size. Descends one level into `Xcode` and
+  `CoreSimulator`, because their children have wildly different reconstruction
+  costs and must not share a verdict:
+  - `iOS DeviceSupport` (and the watchOS/tvOS variants) is regenerable — 5.3 GB
+    of device symbols, re-extracted on the next attach. The single largest win.
+  - `DerivedData` is delegated with the plain `rm -rf` remedy.
+  - `CoreSimulator/*` delegates to `xcrun simctl delete unavailable`, which
+    removes only devices whose runtime is already gone.
+  - `Xcode/Archives` and `Xcode/UserData` are protected: shipped builds with
+    their dSYMs, and hand-made key bindings, themes and breakpoints.
+- **`~/Library/pnpm` is now scanned** — 5.4 GB. pnpm's store lives here on
+  macOS rather than under `~/.cache`, so the shipped `pnpm store prune`
+  delegation had no candidate to attach to.
+- `regenerable_despite_bundle_prefix`, a deliberately tiny rules list for
+  state that is regenerable even though its owner's bundle prefix is
+  protected. One entry: Squirrel.Mac's `<bundle-id>.ShipIt` update staging
+  directory.
+
+### Fixed
+
+- **Delegated cleanups were unreachable for anything with a protected bundle
+  prefix.** The prefix heuristic ran first, so the shipped
+  `com.apple.dt.Xcode` entry had never once fired, and
+  `~/Library/Developer/CoreSimulator/Devices` was hard-protected because the
+  resolver name-matched the generic leaf `Devices` to Spotlight's
+  `com.apple.dt.Devices`. Delegation is now consulted before the prefix
+  heuristic. This cannot make anything deletable — delegation yields
+  non-actionable `REVIEW` — and the explicit data protections (live process,
+  protected path, protected name) still run ahead of it.
+- **1.4 GB of stale VS Code installer payload was permanently protected.**
+  `com.microsoft.VSCodeInsiders.ShipIt` inherited the `com.microsoft.VSCode`
+  prefix, which is protected because workspace state is not reconstructible —
+  a reason that does not apply to a downloaded update. Now `CACHE-SAFE`, with
+  the bypass recorded in the evidence trail.
+- `ScanRoot.enumerateChildren` was declared, documented, and never read, so a
+  root could only ever be a container of candidates rather than one itself.
+  That is what `~/Library/pnpm` needs, since `store` and `global` are
+  meaningless alone and match no cleanup rule.
+
 ## [0.2.0] — 2026-09-25
 
 A correctness and safety release: the findings from a full audit of the

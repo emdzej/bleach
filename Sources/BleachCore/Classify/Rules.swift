@@ -16,6 +16,11 @@ public struct Rules: Codable, Sendable {
     /// Regexes on the candidate name marking regenerable state, even when the
     /// owner is installed and running.
     public var regenerablePatterns: [String] = []
+    /// Regenerable state that additionally outranks a protected bundle
+    /// *prefix* — an updater's staging directory inherits its vendor's prefix
+    /// without inheriting the reason that prefix is protected. Treated as
+    /// regenerable patterns as well, so there is one source of truth.
+    public var regenerableDespiteBundlePrefix: [String] = []
     /// Candidate name -> the tool's own cleanup command. Wrapping a correct
     /// command beats reimplementing its retention logic.
     public var delegatedCleanups: [String: String] = [:]
@@ -33,6 +38,7 @@ public struct Rules: Codable, Sendable {
         case protectedNames = "protected_names"
         case aliases
         case regenerablePatterns = "regenerable_patterns"
+        case regenerableDespiteBundlePrefix = "regenerable_despite_bundle_prefix"
         case delegatedCleanups = "delegated_cleanups"
         case staleDays = "stale_days"
         case keepVersions = "keep_versions"
@@ -60,6 +66,7 @@ public struct Rules: Codable, Sendable {
         var protectedNames: [String]?
         var aliases: [String: String]?
         var regenerablePatterns: [String]?
+        var regenerableDespiteBundlePrefix: [String]?
         var delegatedCleanups: [String: String]?
         var staleDays: Int?
         var keepVersions: Int?
@@ -71,6 +78,7 @@ public struct Rules: Codable, Sendable {
             case protectedNames = "protected_names"
             case aliases
             case regenerablePatterns = "regenerable_patterns"
+            case regenerableDespiteBundlePrefix = "regenerable_despite_bundle_prefix"
             case delegatedCleanups = "delegated_cleanups"
             case staleDays = "stale_days"
             case keepVersions = "keep_versions"
@@ -106,6 +114,7 @@ public struct Rules: Codable, Sendable {
         rules.protectedPathContains += overlay.protectedPathContains ?? []
         rules.protectedNames += overlay.protectedNames ?? []
         rules.regenerablePatterns += overlay.regenerablePatterns ?? []
+        rules.regenerableDespiteBundlePrefix += overlay.regenerableDespiteBundlePrefix ?? []
 
         if let aliases = overlay.aliases { rules.aliases.merge(aliases) { _, new in new } }
         if let cleanups = overlay.delegatedCleanups {
@@ -123,22 +132,41 @@ public struct Rules: Codable, Sendable {
     public final class Compiled: @unchecked Sendable {
         public let rules: Rules
         let regenerable: [NSRegularExpression]
+        let prefixExempt: [NSRegularExpression]
 
         init(_ rules: Rules) {
             self.rules = rules
-            self.regenerable = rules.regenerablePatterns.compactMap {
-                try? NSRegularExpression(pattern: $0, options: [.caseInsensitive])
+            func compile(_ patterns: [String]) -> [NSRegularExpression] {
+                patterns.compactMap {
+                    try? NSRegularExpression(pattern: $0, options: [.caseInsensitive])
+                }
             }
+            self.regenerable = compile(rules.regenerablePatterns)
+            self.prefixExempt = compile(rules.regenerableDespiteBundlePrefix)
         }
 
-        public func isRegenerable(name: String) -> String? {
+        private static func firstMatch(
+            _ name: String, _ expressions: [NSRegularExpression], _ patterns: [String]
+        ) -> String? {
             let range = NSRange(name.startIndex..., in: name)
-            for (i, re) in regenerable.enumerated() {
+            for (i, re) in expressions.enumerated() {
                 if re.firstMatch(in: name, options: [], range: range) != nil {
-                    return rules.regenerablePatterns[i]
+                    return patterns[i]
                 }
             }
             return nil
+        }
+
+        public func isRegenerable(name: String) -> String? {
+            // Prefix-exempt entries are regenerable too, so they are checked
+            // here as well rather than duplicated in `regenerable_patterns`.
+            Self.firstMatch(name, regenerable, rules.regenerablePatterns)
+                ?? Self.firstMatch(name, prefixExempt, rules.regenerableDespiteBundlePrefix)
+        }
+
+        /// Whether this name is exempt from the protected-bundle-prefix rule.
+        public func isRegenerableDespiteBundlePrefix(name: String) -> String? {
+            Self.firstMatch(name, prefixExempt, rules.regenerableDespiteBundlePrefix)
         }
 
         public func protectedPathReason(_ path: String) -> String? {

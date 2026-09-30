@@ -89,6 +89,24 @@ Rules run most-protective-first, in a fixed order. Score is only a tiebreak
 *within* a tier — a pile of weak "looks abandoned" signals must never outvote
 a single protected-path match. See [Tiers](/guide/tiers).
 
+Two places in that order are worth knowing, because both trade a blunt
+`PROTECTED` for a more useful answer without making anything deletable:
+
+- **Delegated cleanups are consulted before the protected-bundle-prefix
+  heuristic.** A delegated entry is curated knowledge about a specific
+  directory; a bundle prefix fires on whatever the resolver *guessed* the owner
+  to be, and generic names guess wrong —
+  `~/Library/Developer/CoreSimulator/Devices` name-matched Apple's
+  `com.apple.dt.Devices` and inherited the blanket `com.apple.` protection.
+  Delegation yields `REVIEW`, which is non-actionable, so the ordering can only
+  ever turn a protection into advice.
+- **A tiny exception list can outrank a protected bundle prefix.** Squirrel.Mac
+  stages updates in `<bundle-id>.ShipIt`, so the directory inherits a vendor
+  prefix protected for an unrelated reason: VS Code's workspace state is not
+  reconstructible, its downloaded installer is. Only that one heuristic is
+  bypassed — a live process, a protected path, a protected name, or a
+  registered app bundle inside all still win.
+
 Two post-passes then run over the whole set:
 
 **Version retention** — among candidates reducing to the same stem, keep the

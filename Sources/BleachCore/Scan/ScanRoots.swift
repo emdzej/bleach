@@ -96,6 +96,26 @@ public enum ScanRoots {
             ScanRoot(id: "app-scripts", path: p("Application Scripts"), kind: .state),
             ScanRoot(id: "launch-agents", path: p("LaunchAgents"), kind: .launchAgent),
 
+            // Xcode and the simulators. 8.5 GB on the machine this was added
+            // against, none of which a Library-only root list could see, since
+            // `~/Library` is scanned at named subdirectories rather than
+            // wholesale. Descends one level into the two umbrella directories
+            // so `DerivedData`, `iOS DeviceSupport` and `CoreSimulator/Devices`
+            // are each their own candidate — they have wildly different
+            // reconstruction costs and must not share a verdict.
+            //
+            // `.state`, not `.cache`: `Xcode/Archives` holds shipped builds and
+            // their dSYMs, so the umbrella is not regenerable by default. The
+            // parts that are say so through `regenerable_patterns`.
+            ScanRoot(id: "developer", path: p("Developer"), kind: .state,
+                     multiTenantChildren: ["Xcode", "CoreSimulator"]),
+
+            // pnpm's content-addressable store, which lives here on macOS
+            // rather than under `~/.cache`. Not enumerated: the whole store is
+            // the unit `pnpm store prune` operates on.
+            ScanRoot(id: "pnpm-store", path: p("pnpm"), kind: .cache,
+                     enumerateChildren: false),
+
             // Not everything lives in ~/Library. Tooling installed outside the
             // app-bundle world keeps state in XDG-ish directories and dotdirs,
             // and it is not small: opencode alone holds 2.8 GB in
