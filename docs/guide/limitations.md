@@ -4,8 +4,10 @@ Being straight about what this tool doesn't do well yet.
 
 ## Scans are slow
 
-A full scan takes roughly a minute, because it walks ~130 GB to compute true
-allocated sizes. There is no size cache — every run re-walks everything.
+A full scan takes roughly a minute and a half, because it walks ~160 GB to
+compute true allocated sizes. There is no size cache — every run re-walks
+everything, and adding `~/Library/Developer` and the pnpm store made it slower
+rather than faster: 14 GB of new ground to cover.
 
 `--fast-inventory` skips the `lsregister -dump` (about 4.5 s) but not the walk,
 so it helps far less than the name suggests.
@@ -15,7 +17,7 @@ improvement.
 
 ## REVIEW is a very large bucket
 
-On the development machine, `REVIEW` holds 65 GB across 343 paths. That's the
+On the development machine, `REVIEW` holds 38 GB across 328 paths. That's the
 honest answer for genuinely ambiguous state, but a bucket that large is not
 actionable — it needs subdividing by *why* a candidate landed there:
 
@@ -24,7 +26,9 @@ actionable — it needs subdividing by *why* a candidate landed there:
 - unowned but recently active
 - a launchd job
 
-Those are four very different situations currently rendered identically.
+Those are four very different situations currently rendered identically, and
+the first is the largest: the report does break the delegated ones out into
+their own section, but the tier itself does not distinguish them.
 
 ## The alias table is small
 
@@ -52,7 +56,7 @@ of Autodesk and Microsoft updater leftovers and then leave you to it.
 `.com.apple.containermanagerd.metadata.plist` is entitlement-protected and
 unreadable. An owner can never be established for these, so they are
 permanently protected. On the development machine that's a meaningful fraction
-of 932 container directories.
+of 961 container directories.
 
 ## Staleness is circumstantial
 

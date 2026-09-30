@@ -11,9 +11,9 @@ Find and safely reclaim orphaned application state on macOS.
 
 `~/Library` accumulates directories belonging to apps you uninstalled months
 ago, superseded versions of apps you still use, and caches nothing will ever
-read again. On the machine this was developed against, that came to **128 GB**
+read again. On the machine this was developed against, that came to **160 GB**
 across `~/Library` and the dotfile directories — of which ~15 GB was safely
-reclaimable and another ~50 GB was delegatable to tools that ship their own
+reclaimable and another ~38 GB was delegatable to tools that ship their own
 cleanup commands.
 
 ## Install

@@ -54,31 +54,32 @@ features:
 
 ## What it found on one real machine
 
-A single scan of the development machine — 128 GB measured across `~/Library`
+A single scan of the development machine — 160 GB measured across `~/Library`
 and the dotfile directories:
 
 ```
-CACHE-SAFE 12.8G (47)   ORPHAN? 2.3G (22)   REVIEW 65.4G (343)   PROTECTED 50.3G (2786)
+CACHE-SAFE 14.6G (49)   ORPHAN? 2.0G (20)   REVIEW 38.0G (328)   PROTECTED 101G (2810)
 
-TIER       SIZE   AGE    WHERE            NAME                        OWNER
-ORPHAN?     854M  20mo   app-support      com.isaacmarovitz.Whisky    —
-ORPHAN?     286M  6mo    app-support      dev.warp.Warp-Stable        —
-ORPHAN?     176M  6mo    dotdirs          .kiro                       —
-ORPHAN?     152M  19mo   dotdirs          .azuredatastudio            —
-ORPHAN?     122M  2y     app-support      com.wondershare.Installer   —
+TIER        SIZE   AGE   WHERE       NAME                                OWNER
+CACHE-SAFE  5.3G   7mo   developer   Xcode/iOS DeviceSupport             —
+CACHE-SAFE  1.4G   0d    caches      com.microsoft.VSCodeInsiders.ShipIt —
+ORPHAN?     531M   3y    developer   Xamarin                             —
+ORPHAN?     108M   2y    dotdirs     .java-caller                        —
+ORPHAN?     104M   2y    app-support Epic                                —
 ```
 
-Every one of those five was verified genuinely uninstalled. But orphans turned
-out to be only part of the story — the tool also found **~50 GB** belonging to
-tools that ship their own cleanup commands, and reports those rather than
-reimplementing their retention policy:
+The device symbols are re-extracted the next time you attach a device; the
+`.ShipIt` directory is a downloaded VS Code update that was already installed.
+Orphans are only part of the story, though — the tool also reports state
+belonging to tools that ship their own cleanup, rather than reimplementing a
+retention policy it doesn't understand:
 
 ```
 Delegate these — the tool knows its own retention policy:
-  11.5G   Homebrew           brew cleanup --prune=all
    8.0G   .espressif         reinstall via the ESP-IDF installer when next needed
-   3.6G   .m2                rm -rf ~/.m2/repository
-   1.8G   pnpm               pnpm store prune
+   5.4G   pnpm               pnpm store prune
+   3.4G   .gradle            gradle --stop, then rm -rf ~/.gradle/caches
+   2.2G   Devices            xcrun simctl delete unavailable
 ```
 
 ## Four kinds of dead weight

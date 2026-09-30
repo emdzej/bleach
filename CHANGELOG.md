@@ -8,6 +8,22 @@ Tags and releases use bare version numbers, without a `v` prefix.
 
 ## [Unreleased]
 
+## [0.3.0] — 2026-09-30
+
+Coverage. `~/Library` is scanned at named subdirectories rather than wholesale,
+which is deliberate — `Mail`, `Messages` and `Keychains` are siblings of the
+rest — but it means anything absent from that list was invisible however large
+it grew. Two things were, and reaching them turned up two ordering bugs that
+had kept curated cleanup advice from ever being shown.
+
+On the machine this was measured against, 15.3 GB moved out of `PROTECTED`
+into something actionable or advisory.
+
+One behaviour change to know about when upgrading: some paths that previously
+read `PROTECTED` now read `REVIEW` and carry the owning tool's cleanup command.
+`REVIEW` is still non-actionable without `--allow-review`, so nothing became
+deletable — but rows that used to be unselectable in the TUI now are.
+
 ### Added
 
 - **`~/Library/Developer` is now scanned.** 8.5 GB on the machine this was
@@ -266,7 +282,8 @@ First release.
   until the quarantine attribute is cleared.
 - Untested below macOS 13.
 
-[Unreleased]: https://github.com/emdzej/bleach/compare/0.2.0...HEAD
+[Unreleased]: https://github.com/emdzej/bleach/compare/0.3.0...HEAD
+[0.3.0]: https://github.com/emdzej/bleach/compare/0.2.0...0.3.0
 [0.2.0]: https://github.com/emdzej/bleach/compare/0.1.1...0.2.0
 [0.1.1]: https://github.com/emdzej/bleach/compare/0.1.0...0.1.1
 [0.1.0]: https://github.com/emdzej/bleach/releases/tag/0.1.0

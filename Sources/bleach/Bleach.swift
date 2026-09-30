@@ -14,7 +14,7 @@ struct Bleach: ParsableCommand {
         Nothing is ever deleted outright: `apply` moves state into a \
         quarantine you can restore from. Scanning is always read-only.
         """,
-        version: "0.2.0",
+        version: "0.3.0",
         subcommands: [Scan.self, TUI.self, Plan.self, Apply.self,
                       Restore.self, QuarantineCommand.self, RulesCommand.self],
         defaultSubcommand: Scan.self
