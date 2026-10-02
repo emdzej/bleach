@@ -8,6 +8,26 @@ Tags and releases use bare version numbers, without a `v` prefix.
 
 ## [Unreleased]
 
+## [0.4.0] — 2026-10-02
+
+apple/container support. Its storage directory was simultaneously the largest
+single row in a scan and permanently unactionable — 50 GB hard-protected by
+the blanket `com.apple.` prefix, with nothing to suggest the runtime itself
+considered 44 GB of it reclaimable. Running the commands it now surfaces
+reclaimed 41 GB on the machine this was written against.
+
+Two notes for upgrading:
+
+- **`com.apple.container` moves from `PROTECTED` to `REVIEW`.** As in 0.3.0,
+  that means it becomes selectable in the TUI and appliable with
+  `--allow-review`. Nothing there is safe to move by hand, though — the point
+  of the change is the command in the evidence trail, not the tier.
+- **The bundled plugin is not active until you install it.** Plugins are only
+  discovered in `~/.config/bleach/plugins/` and `$BLEACH_PLUGIN_PATH`, so copy
+  `plugins/apple-container` from the tarball into the former, or point the
+  latter at it. The delegated cleanup works without the plugin; the plugin is
+  what adds the live byte counts.
+
 ### Added
 
 - **apple/container storage is no longer an opaque blob.** 50 GB under
@@ -314,7 +334,8 @@ First release.
   until the quarantine attribute is cleared.
 - Untested below macOS 13.
 
-[Unreleased]: https://github.com/emdzej/bleach/compare/0.3.0...HEAD
+[Unreleased]: https://github.com/emdzej/bleach/compare/0.4.0...HEAD
+[0.4.0]: https://github.com/emdzej/bleach/compare/0.3.0...0.4.0
 [0.3.0]: https://github.com/emdzej/bleach/compare/0.2.0...0.3.0
 [0.2.0]: https://github.com/emdzej/bleach/compare/0.1.1...0.2.0
 [0.1.1]: https://github.com/emdzej/bleach/compare/0.1.0...0.1.1
