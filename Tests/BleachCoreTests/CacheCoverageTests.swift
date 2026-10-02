@@ -146,6 +146,36 @@ final class CacheCoverageTests: XCTestCase {
         XCTAssertTrue(out.evidence.contains { $0.detail.contains("xcrun simctl delete unavailable") })
     }
 
+    // MARK: - apple/container
+
+    /// `com.apple.container` is 50 GB of content-addressable storage whose
+    /// only safe operations are the runtime's own prune commands. It reads
+    /// REVIEW with those commands attached rather than being swallowed by the
+    /// blanket `com.apple.` protection — which is only possible because
+    /// delegation is consulted before the bundle-prefix heuristic.
+    func testAppleContainerStorageIsDelegatedNotBlanketProtected() {
+        let out = classify(
+            name: "com.apple.container",
+            path: "\(home!)/Library/Application Support/com.apple.container")
+        XCTAssertEqual(out.tier, .review)
+        XCTAssertFalse(out.hardProtected)
+        XCTAssertTrue(out.evidence.contains { $0.detail.contains("container image prune") })
+    }
+
+    /// Named volumes are the data, not a cache. `container volume prune`
+    /// removes any volume without a *container reference*, which a database
+    /// volume for a project you are not running right now does not have —
+    /// while still being the only copy. bleach refuses to be what deletes it.
+    func testAppleContainerVolumesAreProtected() {
+        XCTAssertNotNil(rules.protectedPathReason(
+            "/Users/someone/Library/Application Support/com.apple.container/volumes"))
+        XCTAssertNotNil(rules.protectedPathReason(
+            "/Users/someone/Library/Application Support/com.apple.container/volumes/mongo-data"))
+        // The rest of the storage is not blanket-protected by that rule.
+        XCTAssertNil(rules.protectedPathReason(
+            "/Users/someone/Library/Application Support/com.apple.container/snapshots"))
+    }
+
     // MARK: - The bundle-prefix carve-out
 
     /// Regression: `com.microsoft.VSCodeInsiders.ShipIt` is a Squirrel.Mac

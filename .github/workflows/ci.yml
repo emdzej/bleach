@@ -56,11 +56,23 @@ jobs:
 
       - name: Smoke test bundled plugins
         run: |
+          set -euo pipefail
           for plugin in plugins/*; do
             echo "--- $plugin"
             "$plugin" manifest | python3 -m json.tool
             echo "{\"protocol\":1,\"home\":\"$HOME\",\"stale_days\":180,\"scope\":[\"$HOME\"]}" \
               | "$plugin" enumerate | python3 -c 'import json,sys; json.load(sys.stdin)'
+
+            # `resolve` is the other half of the protocol and had never been
+            # exercised here. A plugin must answer it without the tool it
+            # describes being installed — the runner has neither apple/container
+            # nor an opencode checkout.
+            if "$plugin" manifest | python3 -c 'import json,sys; sys.exit(0 if "resolve" in json.load(sys.stdin)["capabilities"] else 1)'; then
+              echo "{\"protocol\":1,\"home\":\"$HOME\",\"stale_days\":180,\"candidates\":[{\"path\":\"$HOME\",\"name\":\"probe\",\"root_id\":\"r\",\"size_bytes\":0}]}" \
+                | "$plugin" resolve \
+                | python3 -c 'import json,sys; d=json.load(sys.stdin); assert isinstance(d["resolutions"], list), d'
+              echo "    resolve OK"
+            fi
           done
 
       # The destructive path, end to end, against a directory created for the

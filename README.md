@@ -132,10 +132,10 @@ remove a shipped protection (it can still widen what gets proposed, by adding
 resolvers can contribute the risky domain knowledge — which directory belongs
 to what, and which parts of it are dead — without touching the safety
 machinery. A plugin proposes; it never acts, never escapes its declared scope,
-and can never weaken a core protection.
+and can never weaken a verdict the classifier reached.
 → [Writing a plugin](https://bleach.emdzej.pl/guide/plugins)
 
-Two examples ship in [`plugins/`](plugins):
+Three examples ship in [`plugins/`](plugins):
 
 - **`claude-code-sessions`** — decodes `~/.claude/projects` directory names back
   into project paths and checks whether the project still exists. A session for
@@ -144,12 +144,18 @@ Two examples ship in [`plugins/`](plugins):
 - **`opencode-sessions`** — splits `~/.local/share/opencode` (2.8 GB) by role:
   redownloadable language servers, per-session snapshots, session diffs, and the
   live database, which is deliberately never a candidate.
+- **`apple-container`** — proposes nothing at all, on purpose. `container`
+  storage is content-addressable and the runtime keeps its own index of what
+  references what, so the only safe operations are its `prune` commands. The
+  plugin asks `container system df` and `container ls -a` instead, turning an
+  opaque 50 GB directory into "44 GB of your images are unused, here is the
+  command".
 
 ## Development
 
 ```sh
 swift build
-swift test          # 39 tests; SafetyTests, PluginSecurityTests and
+swift test          # 91 tests; SafetyTests, PluginSecurityTests and
                     # RemovalModeTests cover the invariants that must never regress
 
 npm install         # docs site

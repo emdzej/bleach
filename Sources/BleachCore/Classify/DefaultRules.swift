@@ -56,6 +56,12 @@ extension Rules {
       # Key bindings, themes, breakpoints, snippets. Small, hand-made, and
       # not reconstructible.
       - /Xcode/UserData
+      # apple/container named volumes. These are the data, not a cache: a
+      # database volume belonging to a project you are not running right now
+      # has no container reference and is still the only copy. `container
+      # volume prune` deletes exactly those, so bleach refuses to be the one
+      # that does it — the command stays a deliberate choice.
+      - /com.apple.container/volumes
 
     protected_names:
       # Credentials and key material. These are small, so bleach would never
@@ -178,6 +184,14 @@ extension Rules {
       # depending on whether you had ever run the app, which is not a verdict
       # anyone can predict. Delegating states the remedy plainly instead.
       "DerivedData": "rm -rf ~/Library/Developer/Xcode/DerivedData  (Xcode rebuilds indexes)"
+      # apple/container. Its storage is content-addressable — `snapshots/` is
+      # keyed by digest and shared between images and layers, `content/blobs`
+      # is an OCI CAS — and the runtime keeps its own database of what
+      # references what, so moving any of it aside would leave `container`
+      # pointing at digests that no longer exist. Every safe operation here is
+      # a runtime command. 50 GB on the machine this was added against, of
+      # which `container system df` reported 44 GB reclaimable.
+      "com.apple.container": "container system df, then container image prune / container prune"
       # Build and package caches living in dotdirs. All redownloadable, all
       # large, none safe to blind-delete while a build is running.
       ".npm": "npm cache clean --force"

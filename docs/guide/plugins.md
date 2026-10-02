@@ -224,6 +224,44 @@ else:
 Drop it in `~/.config/bleach/plugins/`, `chmod +x`, and confirm with
 `bleach rules --plugins`.
 
+## When the answer is "don't propose anything"
+
+The bundled `apple-container` plugin is worth reading before you write one,
+because it proposes no paths at all and that is the point of it.
+
+`container` keeps ~50 GB under
+`~/Library/Application Support/com.apple.container`, which the `com.apple.`
+protected prefix reduced to one opaque PROTECTED row. But its storage is
+content-addressable: `snapshots/` is keyed by digest and shared between images
+and layers, `content/blobs` is an OCI content store, and the runtime holds its
+own index of what references what. Moving any single directory aside would
+leave `container` pointing at digests that no longer exist — which is the exact
+failure bleach exists to avoid, just committed by a plugin instead of by the
+core.
+
+So it declares `resolve` rather than `enumerate`, and spends its turn asking
+the runtime questions instead: `container system df --format json` reports
+exactly how many bytes are reclaimable, and `container ls -a --format json`
+says which containers are actually running rather than guessing from mtimes.
+The result is a `REVIEW` row carrying "44.3 GB of your 44.7 GB of images is
+unused, run `container image prune`".
+
+Two details in it generalise:
+
+- **It never reports `owner_bundle_id`.** Returning `com.apple.container`
+  would match the protected `com.apple.` prefix and hard-protect the row,
+  hiding the very advice the plugin exists to give.
+- **It never claims the `runningProcess` evidence kind** for a running
+  container. That kind means "a host process is executing from this path" and
+  is a hard protection in the classifier, so borrowing it would both
+  misdescribe a guest VM and suppress the plugin's own tier hint.
+
+Volumes are the counter-example. `container volume prune` removes volumes with
+no *container reference*, which a database volume for a project you are not
+running right now does not have — while still being the only copy of that
+data. bleach protects that directory outright and the plugin names the volumes
+rather than recommending the command.
+
 ## Debugging
 
 Plugins are ordinary programs, so run them by hand:

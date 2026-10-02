@@ -1,0 +1,257 @@
+#!/usr/bin/env python3
+"""bleach plugin: apple/container storage.
+
+`container` keeps everything under ~/Library/Application Support/com.apple.container,
+which is hard-protected by the `com.apple.` bundle prefix and was therefore
+reported as one opaque 50 GB blob — the single largest row in a scan, with no
+indication that 48 GB of it was reclaimable.
+
+This plugin deliberately proposes **no paths at all**, which is the whole point
+of it. The storage is content-addressable: `snapshots/` is keyed by digest and
+shared between images and layers, `content/blobs` is an OCI CAS, and the
+runtime keeps its own database of what references what. Moving any of it aside
+would leave `container` pointing at digests that no longer exist — exactly the
+"reimplementing a retention policy it does not understand" failure that bleach
+exists to avoid. The safe operations are the runtime's own `prune` commands.
+
+So instead it reports, using the runtime as the source of truth:
+`container system df` knows precisely how many bytes are reclaimable, and
+`container ls -a --format json` knows which containers are actually running.
+That turns an un-actionable blob into "44.3 GB of your 44.7 GB of images is
+unused, here is the command".
+
+Volumes are the exception worth reading twice. `container volume prune` removes
+volumes with no *container reference*, which is not the same as "safe to
+delete": a stopped project's database volume has no references and is still the
+only copy of that data. bleach protects the volumes directory outright, and
+this plugin names the volumes rather than recommending the command.
+"""
+import json
+import os
+import subprocess
+import sys
+
+PROTOCOL = 1
+HOME = os.path.expanduser("~")
+ROOT = os.path.join(HOME, "Library", "Application Support", "com.apple.container")
+
+MANIFEST = {
+    "protocol": PROTOCOL,
+    "name": "apple-container",
+    "description": "apple/container images, containers and volumes, sized by the runtime itself",
+    # `resolve` only: this plugin contributes evidence to a directory bleach
+    # already found, and never proposes a path for removal.
+    "capabilities": ["resolve"],
+    "owns": ["~/Library/Application Support/com.apple.container"],
+}
+
+TIMEOUT = 10
+
+
+def run(args):
+    """Query the runtime. Any failure means "cannot say", never an error:
+    `container` may be absent, or its services may be stopped."""
+    try:
+        proc = subprocess.run(
+            ["container"] + args,
+            capture_output=True, text=True, timeout=TIMEOUT,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if proc.returncode != 0:
+        return None
+    return proc.stdout
+
+
+def run_json(args):
+    out = run(args)
+    if not out:
+        return None
+    try:
+        return json.loads(out)
+    except ValueError:
+        return None
+
+
+def gb(n):
+    return "%.1f GB" % (n / 1000.0 ** 3)
+
+
+def plural(n, word):
+    return "%d %s%s" % (n, word, "" if n == 1 else "s")
+
+
+def disk_usage_evidence():
+    """`container system df --format json` reports exact byte counts, so there
+    is no locale-dependent table to parse — its table output renders decimals
+    with a comma in some locales."""
+    df = run_json(["system", "df", "--format", "json"])
+    if not isinstance(df, dict):
+        return []
+
+    out = []
+    for key, label, command in (
+        ("images", "image", "container image prune"),
+        ("containers", "container", "container prune"),
+    ):
+        section = df.get(key)
+        if not isinstance(section, dict):
+            continue
+        total = section.get("total") or 0
+        active = section.get("active") or 0
+        reclaimable = section.get("reclaimable") or 0
+        size = section.get("sizeInBytes") or 0
+        if not total:
+            continue
+
+        if reclaimable > 0:
+            out.append({
+                "kind": "delegatedCleanup",
+                "detail": "%d of %s unused — %s of %s reclaimable via `%s`"
+                          % (total - active, plural(total, label),
+                             gb(reclaimable), gb(size), command),
+                "weight": -3,
+            })
+        else:
+            out.append({
+                "kind": "recentActivity",
+                "detail": "%s, all in use — nothing to reclaim"
+                          % plural(total, label),
+                "weight": 2,
+            })
+    return out
+
+
+def container_evidence():
+    """Which containers are actually running, from the runtime rather than
+    from guessing at directory mtimes."""
+    items = run_json(["ls", "-a", "--format", "json"])
+    if not isinstance(items, list):
+        return []
+
+    running, stopped = [], []
+    for item in items:
+        config = item.get("configuration") or {}
+        name = config.get("id") or item.get("id") or "?"
+        status = item.get("status")
+        state = status.get("state") if isinstance(status, dict) else status
+        (running if state == "running" else stopped).append(name)
+
+    out = []
+    if running:
+        # Deliberately *not* the `runningProcess` kind. That one means "a host
+        # process is executing from this path" and is a hard protection in the
+        # classifier, so claiming it here would both misdescribe a guest
+        # container and suppress this plugin's own REVIEW hint.
+        out.append({
+            "kind": "recentActivity",
+            "detail": "%s running: %s"
+                      % (plural(len(running), "container"),
+                         ", ".join(sorted(running)[:5])),
+            "weight": 5,
+        })
+    if stopped:
+        out.append({
+            "kind": "delegatedCleanup",
+            "detail": "%s stopped (%s) — `container prune` removes them"
+                      % (plural(len(stopped), "container"),
+                         ", ".join(sorted(stopped)[:5])),
+            "weight": -3,
+        })
+    return out
+
+
+def volume_evidence():
+    """Named volumes are user data by definition, so they are named here
+    rather than counted. `container volume prune` drops any volume without a
+    container reference, which is not the same thing as disposable."""
+    items = run_json(["volume", "ls", "--format", "json"])
+    if not isinstance(items, list) or not items:
+        return []
+
+    names = sorted(
+        (item.get("configuration") or {}).get("name") or item.get("id") or "?"
+        for item in items
+    )
+    return [{
+        "kind": "userDataMarker",
+        "detail": "%s hold their own data (%s); "
+                  "`container volume prune` drops any without a container "
+                  "reference, which is not the same as unwanted"
+                  % (plural(len(names), "named volume"), ", ".join(names[:4])),
+        "weight": 4,
+    }]
+
+
+def builder_evidence():
+    status = run(["builder", "status"])
+    if status is None:
+        return []
+    if "not found" in status.lower() or "stopped" in status.lower():
+        return [{
+            "kind": "delegatedCleanup",
+            "detail": "the image builder is not running — `container builder delete` "
+                      "reclaims its VM, and the next build recreates it",
+            "weight": -2,
+        }]
+    return []
+
+
+def resolve(request):
+    out = []
+    for candidate in request.get("candidates") or []:
+        path = candidate.get("path")
+        # Only the storage root itself: there is nothing useful to say about an
+        # individual digest-named snapshot, and nothing safe to do with one.
+        if path != ROOT:
+            continue
+
+        evidence = (disk_usage_evidence()
+                    + container_evidence()
+                    + volume_evidence()
+                    + builder_evidence())
+        if not evidence:
+            # The runtime could not be reached. Say so, rather than implying
+            # the directory is inert.
+            evidence = [{
+                "kind": "cacheRule",
+                "detail": "apple/container storage, but the runtime did not answer "
+                          "— start it with `container system start` for a breakdown",
+                "weight": 0,
+            }]
+
+        out.append({
+            "path": path,
+            "owner_name": "container",
+            # Never actionable from bleach: every safe operation here is a
+            # runtime command, not a file move. REVIEW puts it in the
+            # "delegate these" section with the reasoning attached.
+            "tier_hint": "review",
+            "evidence": evidence,
+        })
+    return {"protocol": PROTOCOL, "resolutions": out}
+
+
+def main():
+    mode = sys.argv[1] if len(sys.argv) > 1 else "manifest"
+    if mode == "manifest":
+        json.dump(MANIFEST, sys.stdout)
+        return 0
+    if mode == "enumerate":
+        # Answered for completeness, always empty. See the module docstring:
+        # proposing a path inside a content-addressable store would corrupt
+        # the runtime's view of itself.
+        if not sys.stdin.isatty():
+            sys.stdin.read()
+        json.dump({"protocol": PROTOCOL, "candidates": []}, sys.stdout)
+        return 0
+    if mode == "resolve":
+        request = json.load(sys.stdin) if not sys.stdin.isatty() else {}
+        json.dump(resolve(request), sys.stdout)
+        return 0
+    sys.stderr.write("unknown mode: %s\n" % mode)
+    return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main())

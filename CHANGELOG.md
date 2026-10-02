@@ -8,6 +8,38 @@ Tags and releases use bare version numbers, without a `v` prefix.
 
 ## [Unreleased]
 
+### Added
+
+- **apple/container storage is no longer an opaque blob.** 50 GB under
+  `~/Library/Application Support/com.apple.container` was the single largest
+  row in a scan and permanently `PROTECTED` by the blanket `com.apple.`
+  prefix, with no hint that `container system df` considered 44 GB of it
+  reclaimable. It now delegates to the runtime's own commands.
+
+  Path-level removal is deliberately *not* offered. The storage is
+  content-addressable — `snapshots/` is keyed by digest and shared between
+  images and layers, `content/blobs` is an OCI content store — and the runtime
+  keeps its own index of what references what, so moving any single directory
+  aside would leave `container` pointing at digests that no longer exist.
+- **`protected_path_contains: /com.apple.container/volumes`.** Named volumes
+  are the data, not a cache. `container volume prune` removes volumes with no
+  *container reference*, which a database volume for a project you are not
+  running right now does not have — while still being the only copy of it.
+  The command stays available; bleach will not be what runs it.
+- **New bundled plugin, `apple-container`.** It declares `resolve` and
+  proposes no paths at all, which is the point of it: instead of guessing, it
+  asks `container system df --format json` for exact reclaimable byte counts
+  and `container ls -a --format json` for which containers are genuinely
+  running. JSON rather than the table output because the latter renders
+  decimals with a locale-dependent separator. Degrades to a plain "the runtime
+  did not answer" when `container` is absent or stopped.
+
+### Fixed
+
+- CI never exercised the `resolve` half of the plugin protocol. It now does,
+  for every bundled plugin that declares the capability, with the tool being
+  described deliberately absent from the runner.
+
 ## [0.3.0] — 2026-09-30
 
 Coverage. `~/Library` is scanned at named subdirectories rather than wholesale,
