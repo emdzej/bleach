@@ -194,7 +194,11 @@ extension Rules {
       "com.apple.container": "container system df, then container image prune / container prune"
       # Build and package caches living in dotdirs. All redownloadable, all
       # large, none safe to blind-delete while a build is running.
-      ".npm": "npm cache clean --force"
+      # `npm cache clean --force` only empties `_cacache`. It leaves `_npx`
+      # alone, which was 2.1 GB of the 3.2 GB in ~/.npm on the machine this
+      # was corrected against — so the command alone does not clean the
+      # directory it is attached to.
+      ".npm": "npm cache clean --force && rm -rf ~/.npm/_npx"
       ".yarn": "yarn cache clean"
       ".m2": "rm -rf ~/.m2/repository  (redownloaded by the next build)"
       ".gradle": "gradle --stop, then rm -rf ~/.gradle/caches"

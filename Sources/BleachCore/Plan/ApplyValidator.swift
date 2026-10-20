@@ -59,7 +59,8 @@ public struct ApplyValidator: Sendable {
         if rules.isProtectedName(leaf) {
             return "\"\(leaf)\" is a protected name"
         }
-        if Normalizer.looksLikeBundleID(leaf), let prefix = rules.isProtectedBundleID(leaf) {
+        if Normalizer.looksLikeBundleID(leaf), let prefix = rules.isProtectedBundleID(leaf),
+           rules.isRegenerableDespiteBundlePrefix(name: leaf) == nil {
             return "bundle ID matches protected prefix \(prefix)"
         }
 

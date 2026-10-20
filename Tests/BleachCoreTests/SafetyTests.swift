@@ -35,6 +35,25 @@ final class SafetyTests: XCTestCase {
                        allowNonActionableTiers: allowReview)
     }
 
+    // MARK: - Protected bundle prefixes
+
+    /// The classifier exempts an updater staging area from its vendor's
+    /// protected prefix (`regenerable_despite_bundle_prefix`). The validator
+    /// re-derives protections independently, so it has to honour the same
+    /// exemption — otherwise a path is proposed, planned, and then refused at
+    /// apply, which is the apply/classify asymmetry in a new costume.
+    func testPermitsUpdaterStagingAreaExemptFromVendorPrefix() throws {
+        let path = try makeDir("Library/Caches/com.microsoft.VSCodeInsiders.ShipIt")
+        XCTAssertNil(validator().reasonToRefuse(entry(path)))
+    }
+
+    /// The exemption is narrow: the vendor prefix still protects everything
+    /// that is not an updater staging area.
+    func testStillRefusesProtectedVendorBundleID() throws {
+        let path = try makeDir("Library/Caches/com.microsoft.VSCodeInsiders")
+        XCTAssertNotNil(validator().reasonToRefuse(entry(path)))
+    }
+
     // MARK: - Path shape
 
     func testRefusesPathsOutsideHome() {
