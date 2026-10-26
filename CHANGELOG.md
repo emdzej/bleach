@@ -8,6 +8,12 @@ Tags and releases use bare version numbers, without a `v` prefix.
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-10-26
+
+Both changes here came out of using the tool on a disk that kept filling up,
+which is also how the apply-time bug was found: a real 1.4 GB reclaim was
+being refused by a check the classifier had already cleared.
+
 ### Added
 
 - `plugins/vscode-extensions`, which finds VS Code extension version
@@ -356,7 +362,8 @@ First release.
   until the quarantine attribute is cleared.
 - Untested below macOS 13.
 
-[Unreleased]: https://github.com/emdzej/bleach/compare/0.4.0...HEAD
+[Unreleased]: https://github.com/emdzej/bleach/compare/0.5.0...HEAD
+[0.5.0]: https://github.com/emdzej/bleach/compare/0.4.0...0.5.0
 [0.4.0]: https://github.com/emdzej/bleach/compare/0.3.0...0.4.0
 [0.3.0]: https://github.com/emdzej/bleach/compare/0.2.0...0.3.0
 [0.2.0]: https://github.com/emdzej/bleach/compare/0.1.1...0.2.0
