@@ -8,6 +8,28 @@ Tags and releases use bare version numbers, without a `v` prefix.
 
 ## [Unreleased]
 
+### Added
+
+- `plugins/vscode-extensions`, which finds VS Code extension version
+  directories the editor will never load again. It reads the editor's own two
+  ledgers — `extensions.json` for what loads, `.obsolete` for what it has
+  decided to delete — and never parses a version out of a directory name.
+  That parsing is the trap the plugin exists to avoid:
+  `vscjava.vscode-maven-0.45.2026092807` carries a build date that sorts above
+  its successor `0.46.0`, and `redhat.java-1.58.x-darwin-arm64` has a platform
+  triple after the version, so sorting names is how a cleanup tool uninstalls
+  a working extension. An unreadable ledger produces no candidates rather
+  than a guess.
+
+### Fixed
+
+- `ApplyValidator` now honours `regenerable_despite_bundle_prefix`, which only
+  the classifier consulted. The two disagreed, so a path could be classified
+  CACHE-SAFE, written into a plan, and then refused at apply —
+  `com.microsoft.VSCodeInsiders.ShipIt` (1.4 GB) hit exactly this.
+- The `.npm` delegated command cleaned the cache but left `~/.npm/_npx`
+  behind, which was the larger half.
+
 ## [0.4.0] — 2026-10-02
 
 apple/container support. Its storage directory was simultaneously the largest

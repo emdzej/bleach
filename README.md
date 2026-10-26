@@ -135,7 +135,7 @@ machinery. A plugin proposes; it never acts, never escapes its declared scope,
 and can never weaken a verdict the classifier reached.
 → [Writing a plugin](https://bleach.emdzej.pl/guide/plugins)
 
-Three examples ship in [`plugins/`](plugins):
+Four examples ship in [`plugins/`](plugins):
 
 - **`claude-code-sessions`** — decodes `~/.claude/projects` directory names back
   into project paths and checks whether the project still exists. A session for
@@ -144,6 +144,13 @@ Three examples ship in [`plugins/`](plugins):
 - **`opencode-sessions`** — splits `~/.local/share/opencode` (2.8 GB) by role:
   redownloadable language servers, per-session snapshots, session diffs, and the
   live database, which is deliberately never a candidate.
+- **`vscode-extensions`** — reads VS Code's own two ledgers, `extensions.json`
+  and `.obsolete`, to find version directories the editor will never load
+  again. It never parses a version out of a directory name, because that is
+  the trap: `vscjava.vscode-maven-0.45.2026092807` carries a build date that
+  sorts *above* its successor `0.46.0`, and `redhat.java-1.58.x-darwin-arm64`
+  has a platform triple after the version. If a ledger is unreadable the
+  plugin reports nothing rather than guess which copy is newer.
 - **`apple-container`** — proposes nothing at all, on purpose. `container`
   storage is content-addressable and the runtime keeps its own index of what
   references what, so the only safe operations are its `prune` commands. The
@@ -155,7 +162,7 @@ Three examples ship in [`plugins/`](plugins):
 
 ```sh
 swift build
-swift test          # 91 tests; SafetyTests, PluginSecurityTests and
+swift test          # 100 tests; SafetyTests, PluginSecurityTests and
                     # RemovalModeTests cover the invariants that must never regress
 
 npm install         # docs site

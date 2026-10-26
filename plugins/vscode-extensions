@@ -1,0 +1,219 @@
+#!/usr/bin/env python3
+"""bleach plugin: superseded VS Code extension versions.
+
+VS Code installs each extension update into a new version-suffixed directory
+and is supposed to reap the old one. It keeps two ledgers in the extensions
+directory:
+
+  extensions.json  the extensions it will actually load, one entry per
+                   directory, with `relativeLocation` naming that directory
+                   and `identifier.id` / `version` split out cleanly.
+  .obsolete        directories it has decided to delete.
+
+Both are authoritative, and between them they answer the only question that
+matters -- "will the editor ever load this directory again?" -- without
+parsing a version out of a folder name. That parsing is the trap: a folder
+named `vscjava.vscode-maven-0.45.2026092807` carries a date-stamped build
+number that does not sort against `0.46.0` under any obvious rule, and
+`redhat.java-1.58.2026101608-darwin-arm64` has a platform triple after the
+version. Guessing which of two folders is newer is how a cleanup tool
+uninstalls a working extension.
+
+So this plugin never guesses. If a directory is absent from extensions.json
+it is unreferenced; if a *sibling with the same extension id* is present in
+extensions.json, the unreferenced one is superseded and its replacement is
+named in the evidence. If the ledgers cannot be read, the plugin reports
+nothing at all rather than fall back to sorting names.
+
+Two distinct leaks show up here, worth telling apart:
+  - listed in .obsolete and still on disk: VS Code tried to delete it and
+    failed, usually a crash or a lock mid-update.
+  - in neither ledger: VS Code dropped the entry and forgot the directory.
+    This is the quieter and more common one -- it accumulates a nightly
+    build's worth of Java tooling every week.
+"""
+import json
+import os
+import sys
+import time
+
+PROTOCOL = 1
+HOME = os.path.expanduser("~")
+
+ROOTS = ["~/.vscode-insiders/extensions", "~/.vscode/extensions"]
+
+MANIFEST = {
+    "protocol": PROTOCOL,
+    "name": "vscode-extensions",
+    "description": "Superseded VS Code extension versions, per the editor's own ledgers",
+    "capabilities": ["enumerate"],
+    "owns": ROOTS,
+}
+
+
+def read_json(path):
+    """None on any failure. A missing or corrupt ledger must not become a
+    guess -- the caller reports nothing instead."""
+    try:
+        with open(path) as handle:
+            return json.load(handle)
+    except (OSError, ValueError):
+        return None
+
+
+def installed(extensions_dir):
+    """Map directory name -> (extension id, version) from extensions.json.
+
+    Returns None when the ledger is unreadable, which disables the plugin for
+    this root. `relativeLocation` is preferred over `location.path` because it
+    is already the bare directory name; the fallback covers older files that
+    only carry the absolute path.
+    """
+    entries = read_json(os.path.join(extensions_dir, "extensions.json"))
+    if not isinstance(entries, list):
+        return None
+    out = {}
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        name = entry.get("relativeLocation")
+        if not name:
+            location = entry.get("location") or {}
+            path = location.get("path") if isinstance(location, dict) else None
+            name = os.path.basename(path.rstrip("/")) if path else None
+        if not name:
+            continue
+        identifier = entry.get("identifier") or {}
+        out[name] = (identifier.get("id"), entry.get("version"))
+    return out
+
+
+def obsolete(extensions_dir):
+    """Directory names VS Code has marked for deletion."""
+    marked = read_json(os.path.join(extensions_dir, ".obsolete"))
+    if not isinstance(marked, dict):
+        return set()
+    return {name for name, flag in marked.items() if flag}
+
+
+def extension_id_of(dirname, live):
+    """Best-effort extension id for an *unreferenced* directory.
+
+    Only ever used to find a live sibling, never to compare versions. Matches
+    against ids the ledger already vouches for, longest first, so
+    `vscjava.vscode-java-debug` wins over `vscjava.vscode-java` for
+    `vscjava.vscode-java-debug-0.59.1`.
+    """
+    known = sorted({i for i, _v in live.values() if i}, key=len, reverse=True)
+    for ext_id in known:
+        if dirname == ext_id or dirname.startswith(ext_id + "-"):
+            return ext_id
+    return None
+
+
+def days_old(path, now):
+    try:
+        return int((now - os.lstat(path).st_mtime) / 86400)
+    except OSError:
+        return None
+
+
+def enumerate_candidates(request):
+    home = request.get("home") or HOME
+    now = time.time()
+    out = []
+
+    for root in ROOTS:
+        extensions_dir = root.replace("~", home, 1)
+        if not os.path.isdir(extensions_dir):
+            continue
+
+        live = installed(extensions_dir)
+        if live is None:
+            # No ledger, no opinion. Saying nothing is the correct output:
+            # the only alternative is guessing which version is newer.
+            continue
+        marked = obsolete(extensions_dir)
+
+        for name in sorted(os.listdir(extensions_dir)):
+            path = os.path.join(extensions_dir, name)
+            if name.startswith(".") or not os.path.isdir(path) or os.path.islink(path):
+                continue
+            if name in live:
+                continue
+
+            evidence = []
+            ext_id = extension_id_of(name, live)
+            replacement = next(
+                (d for d, (i, _v) in live.items() if i == ext_id), None
+            ) if ext_id else None
+
+            # Tier by the strongest ledger signal available. Both pieces of
+            # evidence are reported when both apply -- naming the successor is
+            # useful context even once .obsolete has settled the question.
+            tier = "review"
+
+            if name in marked:
+                evidence.append({
+                    "kind": "noOwnerFound",
+                    "detail": "VS Code marked this obsolete in .obsolete "
+                              "but did not finish deleting it",
+                    "weight": -8,
+                })
+                tier = "orphan_likely"
+
+            if replacement:
+                version = live[replacement][1] or "a newer build"
+                evidence.append({
+                    "kind": "versionSibling",
+                    "detail": "superseded: the editor loads %s (%s) instead"
+                              % (replacement, version),
+                    "weight": -7,
+                })
+                tier = "orphan_likely"
+            elif name not in marked:
+                # Unreferenced with no installed successor and no delete
+                # marker. Could be an extension mid-install, or one sideloaded
+                # from a VSIX that the ledger describes differently. Report,
+                # do not propose.
+                evidence.append({
+                    "kind": "noOwnerFound",
+                    "detail": "not listed in extensions.json and no other "
+                              "version of it is installed",
+                    "weight": -2,
+                })
+
+            age = days_old(path, now)
+            if age is not None:
+                evidence.append({
+                    "kind": "stale",
+                    "detail": "directory last modified %d days ago" % age,
+                    "weight": -1 if age >= request.get("stale_days", 180) else 0,
+                })
+
+            out.append({
+                "path": path,
+                "label": "vscode extension: %s" % name,
+                "kind": "state",
+                "tier_hint": tier,
+                "evidence": evidence,
+            })
+
+    return {"protocol": PROTOCOL, "candidates": out}
+
+
+def main():
+    mode = sys.argv[1] if len(sys.argv) > 1 else "manifest"
+    if mode == "manifest":
+        json.dump(MANIFEST, sys.stdout)
+        return 0
+    if mode == "enumerate":
+        request = json.load(sys.stdin) if not sys.stdin.isatty() else {}
+        json.dump(enumerate_candidates(request), sys.stdout)
+        return 0
+    sys.stderr.write("unknown mode: %s\n" % mode)
+    return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main())
